@@ -1,0 +1,22 @@
+node_modules/
+.local/
+output/
+# Private reverse-engineering evidence, tools and customer files stay local.
+research/
+sources/
+account/
+.env
+.env.*
+*.dpapi
+*.pem
+*.key
+*.ORI
+*.ori
+*.ols
+*.bin
+*.tuneworkshop.json
+*.log
+*.zip
+
+dist/
+.cache/

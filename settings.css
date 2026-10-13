@@ -1,0 +1,26 @@
+.settings-dialog{width:720px;padding:0;max-height:90vh;max-height:90dvh;background:var(--panel);overflow:auto;color:var(--text);scroll-padding-bottom:100px}
+.settings-dialog #settings-form{padding:25px 25px 0}
+.settings-heading{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.settings-heading h2{font-size:25px;letter-spacing:-.4px;margin:3px 0 0}
+.settings-heading #settings-close{background:transparent;border-color:transparent;font-size:27px;line-height:1;min-width:44px;min-height:44px;padding:4px}
+.settings-dialog .settings-intro{font-size:14px;margin:12px 0 24px}
+.settings-section{border:0;border-top:1px solid var(--border);padding:12px 0 17px;margin:0;min-width:0}
+.settings-section legend{padding:0 14px 0 0;color:var(--teal);font-size:16px;font-weight:600}
+.settings-check,.settings-select{display:flex;gap:13px;padding:11px 0;color:var(--text);align-items:flex-start;cursor:pointer}
+.settings-check>span,.settings-select>span{min-width:0;flex:1}
+.settings-check strong,.settings-select strong{font-size:14px;font-weight:550;display:block;line-height:1.5}
+.settings-check small,.settings-select small{display:block;color:var(--muted);font-size:12px;line-height:1.6;margin-top:3px;font-weight:400}
+.settings-check input[type=checkbox]{flex:0 0 18px;width:18px;height:18px;margin:2px 0 0;cursor:pointer}
+.settings-select{align-items:center;cursor:default}
+.settings-select select{width:185px;max-width:100%;min-height:44px;font-size:14px;flex-shrink:0}
+.settings-dialog .settings-apply-note{font-size:12px;margin:0 0 9px}
+.settings-dialog #settings-message{font-size:13px;min-height:22px;margin:8px 0 14px;color:var(--teal);overflow-wrap:anywhere}
+.settings-dialog #settings-message.settings-error{color:var(--danger)}
+.settings-actions{position:sticky;bottom:0;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 25px;margin:0 -25px;background:var(--panel);border-top:1px solid var(--border);box-shadow:0 -8px 16px #11151a80;font-size:14px;letter-spacing:normal}
+.settings-actions>div{display:flex;gap:10px}
+.settings-dialog button{min-height:44px}
+.settings-actions #settings-reset{background:transparent;color:var(--muted)}
+.settings-saved-status{position:fixed;bottom:55px;left:50%;transform:translateX(-50%);padding:12px 20px;border:1px solid #4e8a7e;border-radius:7px;background:#1e3b36;color:#e4fff7;font-size:14px;box-shadow:0 8px 35px #0008;z-index:25;max-width:calc(100vw - 28px)}
+#assistant-panel .chat-message p,#assistant-question{font-size:var(--chat-text-size,14px)}
+#assistant-panel #assistant-keyboard-hint{font-size:11px;line-height:1.5;margin:7px 0;color:var(--muted)}
+@media(max-width:560px){.settings-dialog{scroll-padding-bottom:160px}.settings-dialog #settings-form{padding:20px 20px 0}.settings-select{align-items:stretch;flex-direction:column;gap:8px}.settings-select select{width:100%}.settings-actions{align-items:stretch;flex-direction:column;margin:0 -20px;padding:14px 20px}.settings-actions>div{width:100%}.settings-actions>div button{flex:1}.settings-actions #settings-reset{align-self:flex-start}}

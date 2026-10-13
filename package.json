@@ -1,0 +1,30 @@
+{
+  "name": "tune-workshop",
+  "version": "0.9.2",
+  "private": true,
+  "type": "module",
+  "description": "Local offline calibration editor foundation for the Fiat 500X project",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "desktop": "electron .",
+    "build:win": "electron-builder --win --x64 --config electron-builder.cjs --publish never",
+    "build:dir": "electron-builder --win --x64 --dir --config electron-builder.cjs --publish never"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "optionalDependencies": {
+    "serialport": "13.0.0"
+  },
+  "dependencies": {
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "main": "desktop/main.mjs",
+  "author": "Tune Workshop",
+  "license": "UNLICENSED"
+}
