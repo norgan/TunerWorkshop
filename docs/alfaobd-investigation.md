@@ -69,4 +69,14 @@ Language text uses array position after sorting the TNAMES table by ID; an arbit
 
 The loader binding has been verified for the selected PROXI text. Its report distinguishes configured, present, new, removed and inactive nodes, EOL membership, nodes requiring programming and EOL success/failure. The finish instruction asks the operator to inspect failed nodes and complete the ignition-off/power-latch stage; a finish dialog is not an all-nodes-success assertion.
 
-No real ECU, adapter or physical actuator was exercised. Installed-release capability counts remain those recorded in [diagnostic coverage](diagnostics-coverage.md). The next useful implementation is the additional engine readings with verified byte layouts and equations, followed by the read-only PROXI assessment. Keep calibration-file decoding and ECU flashing separate from this diagnostic investigation.
+No real ECU, adapter or physical actuator was exercised. Installed-release capability counts remain those recorded in [diagnostic coverage](diagnostics-coverage.md). Keep calibration-file decoding and ECU flashing separate from this diagnostic investigation.
+
+## Implementation follow-up: 0.11.1
+
+The 47 additional readings are now implemented, bringing the engine profile to **152 selectable numeric/status parameters**. Original MES keys, equations, ordering and the eight default readings are preserved. New readings use stable `8gmk-<did>-<data-offset>` keys. The two missing decoders and five overlapping conflicts remain unresolved; none were silently substituted into polling.
+
+The additions cover boost actuator duty, lambda current/voltage/temperature, throttle-track voltages, fuel level, supply and relay voltages, idle torque, modelled catalyst temperature and MultiAir feedback. MultiAir contributes 22 readings, including desired valve angles and four separate values for each adapted/corrected switching-time record. Four-cylinder records share one request and one timestamp. These are measurements; selecting an actuator duty or adaptation reading does not command the actuator or perform an adaptation.
+
+Additional equations apply their multiplier directly, with display precision kept separate from scaling. The late-opening target uses its traced piecewise transition at raw 11200, subtracting 12800 in the upper branch before dividing by 16. It is not treated as ordinary signed 16-bit data. Signed lambda currents and adapted switching-time deltas retain negative values; corrected switching times are unsigned. The percent coefficient is represented as `100/65535`, equivalent to the traced decimal at the displayed precision.
+
+Tests exercise numerical boundaries, distinct cylinder offsets, truncated records, grouped multi-frame polling and unsupported responses that later recover. Renderer checks cover the expanded searchable catalogue, graph selection, recording and opt-in assistant context. The existing identity gate and read-only request list apply to the expanded profile. Static evidence and synthetic tests do not establish that the user's ECU supports every additional request. The next investigation remains the read-only PROXI assessment.

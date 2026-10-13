@@ -1,17 +1,17 @@
 # Fiat 500X diagnostic coverage
 
-This document tracks progress towards MultiECUScan-style diagnostics for the **Fiat 500X (334), 1.4 MultiAir, Marelli IAW 8GMK**. It describes Tuner Workshop **0.11.0**, reviewed on **13 October 2026**. Source implementation, packaged-release checks and physical vehicle acceptance are separate milestones.
+This document tracks progress towards MultiECUScan-style diagnostics for the **Fiat 500X (334), 1.4 MultiAir, Marelli IAW 8GMK**. It describes Tuner Workshop **0.11.1**, reviewed on **13 October 2026**. Source implementation, packaged-release checks and physical vehicle acceptance are separate milestones.
 
 Version 0.11.0 adds **23 usable controller/variant profiles**, **581 readable parameter definitions** and **82 actuator workflows** beyond the existing engine and service-reminder profiles. The selector includes all 26 reference controller/variant entries plus Standard OBD. These include alternative engines and optional equipment, not 26 modules confirmed fitted to one car. The app does not yet replace every MultiECUScan function.
 
-**Source follow-up, 13 October 2026:** the [AlfaOBD investigation](alfaobd-investigation.md) established the instrument self-test's explicit return-of-control sequence for both supported cluster identities. Source now enables that ten-second test, bringing non-engine executable actuator workflows to **83**, with **23** mechanical procedures still unavailable. The table below records the packaged 0.11.0 baseline; this follow-up has not been packaged, installed or accepted on a vehicle. It passed 47 focused module, diagnostic, session and service tests, including cancellation and a lost return-control acknowledgement.
+**0.11.1 follow-up:** the [AlfaOBD investigation](alfaobd-investigation.md) adds 47 independently decoded engine readings and establishes the instrument self-test's explicit return-of-control sequence for both supported cluster identities. The engine profile now has **152** readings. Non-engine executable actuator workflows total **83**, with **23** mechanical procedures still unavailable. The new sensor definitions retain the original 105 readings and eight-channel default. Two unresolved additional sensor decoders and five conflicting overlaps remain excluded from the expansion. Physical vehicle acceptance remains pending.
 
 ## Current source coverage
 
 | Capability | Implemented in the app | Evidence and remaining checks |
 | --- | --- | --- |
 | Standard OBD sensors | Six measurements, supported-PID discovery, charts and recording | USB readings have been observed on a vehicle. That does not verify every adapter or manufacturer function. |
-| IAW 8GMK engine parameters | 105 definitions, numeric/status decoding, search, presets and 1–32 selected readings | The entire catalogue was checked against static reference definitions; the first 26 names were also compared with Simulation. Physical manufacturer-session acceptance remains pending. |
+| IAW 8GMK engine parameters | 152 definitions, numeric/status decoding, search, presets and 1–32 selected readings | The entire catalogue was checked against static reference definitions; the first 26 names were also compared with Simulation. Physical manufacturer-session acceptance remains pending. |
 | Engine identification | Reads identity before manufacturer polling and rejects an unexpected profile | This is part of the engine connection, not a vehicle-wide module scan. |
 | Connection options | USB, Bluetooth Classic COM, BLE and private-network Wi-Fi TCP | Automated transport checks exist. BLE service discovery and a listed COM port do not establish device compatibility. |
 | Saved diagnostic sessions | Imports supported English MES logs and displays recorded faults and parameter samples | Historical information remains separate from current vehicle status. |
@@ -22,8 +22,8 @@ Version 0.11.0 adds **23 usable controller/variant profiles**, **581 readable pa
 | Dashboard service reminder | Separate service profile with 11 readings and an explicit reminder reset | Strict cluster identity, fresh motion checks, one reset request and counter readback. Lost/mismatched responses remain an unknown outcome; the write is not automatically repeated. Physical acceptance is pending. |
 | Other module sensors | 23 additional profiles with 581 readable definitions | Covers body, instrument, gearbox, ABS, airbag, steering, parking, climate and other optional controllers. Each uses its own identity, address, network and decoder. Physical acceptance is pending. |
 | Other module faults and identity | Module-specific fault reading/clearing, identification and supported snapshots | Definitions include 2,580 fault descriptions across the reference module families. Fixed-offset snapshots are explicitly partial; unknown codes retain their module attribution. Clear requires fresh identity and conditions. |
-| Other module actuator tests | 82 executable workflows; all 106 recovered non-engine actuator entries shown | Body 28, instrument 20, climate 19 across two variants, comfort 3, ABS indicators 5, radar 3, blind-spot lamps 2 and RF-hub alternatives 2. Controller acknowledgements do not establish component operation. |
-| Remaining actuator procedures | 24 entries unavailable with individual reasons | 13 hydraulic brake tests, three parking-brake motor operations, seven DDCT mechanical operations and the cluster self-test need complete setup/completion/return-control evidence. |
+| Other module actuator tests | 83 executable workflows; all 106 recovered non-engine actuator entries shown | Body 28, instrument 21, climate 19 across two variants, comfort 3, ABS indicators 5, radar 3, blind-spot lamps 2 and RF-hub alternatives 2. Controller acknowledgements do not establish component operation. |
+| Remaining actuator procedures | 23 entries unavailable with individual reasons | 13 hydraulic brake tests, three parking-brake motor operations, seven DDCT mechanical operations need complete setup/completion/return-control evidence. |
 | PROXI and unresolved readings | PROXI unavailable; two radar angles unavailable | 80 PROXI node descriptors are not ordinary sensors. Two four-byte radar angle formats have a signedness conflict in the reference. |
 
 Pressure display can use bar or psi. Changing display units preserves the original measurement and calibration units. An absolute pressure reading stays absolute.
@@ -78,7 +78,7 @@ Module coverage is separate from application conveniences such as multi-signal g
 ## Checks that establish support
 
 - **Protocol:** correct target/session, expected identity, complete multi-frame replies, pending responses, refusals, truncated data, wrong-module replies, disconnects and bounded retries. Never turn an unavailable response into zero or a previous value.
-- **Engine parameters:** compare representative pressure, temperature, signed ignition, injection and categorical readings with the reference tool on the same vehicle; record which of the 105 channels are actually supported. Separate unsupported channels from decoding failures.
+- **Engine parameters:** compare representative pressure, temperature, signed ignition, injection and categorical readings with the reference tool on the same vehicle; record which of the 152 channels are actually supported. Separate unsupported channels from decoding failures.
 - **Faults:** distinguish no faults from failed reads; preserve status and module attribution; verify long lists, unknown descriptions and detail records. Fault clearing requires a separate deliberate action and a fresh read afterwards.
 - **Operations:** retain the pre-operation report, verify required vehicle conditions, exercise completion/error/cancellation paths, and verify resulting state. A positive transport response alone may not mean the procedure completed.
 - **Vehicle acceptance:** record app version, module identity, adapter/lead, operation, expected result and observed result. Automated fixtures and Simulation remain separate from physical acceptance.

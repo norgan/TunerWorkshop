@@ -95,6 +95,39 @@ test('sensor DID multi-frame data is reassembled and byte-offset groups retain t
   assert.equal(byKey['mes-11686'], 'OK');
 });
 
+test('additional MultiAir channels share one complete DID response with distinct cylinder readings', async t => {
+  const keys = [0, 2, 4, 6].map(offset => `8gmk-1996-${offset}`);
+  const f = fixture(t, { reply: command => command === '221996' ? didReply(command, [0xff, 0xfb, 0, 10, 0, 15, 0, 20]) : undefined });
+  const samples = events(f.session, 'sample'); await f.connect(keys);
+  const [sample] = await samples;
+  await f.session.disconnect();
+  assert.deepEqual(sample.values, Object.fromEntries(keys.map((key, i) => [key, [-1, 2, 3, 4][i]])));
+  assert.ok(keys.every(key => sample.quality[key] === 'valid'));
+  assert.equal(f.port.writes.filter(command => command === '221996').length, 1);
+  assert.equal(sample.profileId, 'fiat-8gmk');
+});
+
+test('truncated shared MultiAir records publish no partial cylinder group', async t => {
+  const f = fixture(t, { reply: command => command === '22199E' ? didReply(command, [0, 5, 0, 10, 0, 15, 0]) : undefined });
+  const faults = events(f.session, 'fault');
+  const samples = []; f.session.on('sample', sample => samples.push(sample));
+  await f.connect(['8gmk-199e-0', '8gmk-199e-6']); await faults;
+  assert.equal(samples.length, 0);
+  assert.equal(f.session.snapshot().values['8gmk-199e-0'], undefined);
+  assert.equal(f.port.closed, true);
+});
+
+test('unsupported additional engine requests remain unavailable, then recover without changing meaning', async t => {
+  let poll = 0;
+  const f = fixture(t, { reply: command => command !== '221819' ? undefined : ++poll === 1 ? canReply([0x7f, 0x22, 0x31]) : didReply(command, [0xff, 0xff]) });
+  const samples = events(f.session, 'sample', 2); await f.connect(['8gmk-1819-0']);
+  const [unavailable, valid] = await samples; await f.session.disconnect();
+  assert.equal(unavailable.values['8gmk-1819-0'], null);
+  assert.equal(unavailable.quality['8gmk-1819-0'], 'unavailable');
+  assert.equal(valid.values['8gmk-1819-0'], 100);
+  assert.equal(valid.quality['8gmk-1819-0'], 'valid');
+});
+
 test('negative and NO DATA sensor replies become unavailable while later samples recover', async t => {
   let poll = 0;
   const f = fixture(t, { reply: command => command !== '221000' ? undefined : ++poll === 1 ? canReply([0x7f, 0x22, 0x31]) : poll === 2 ? 'NO DATA\r>' : undefined });

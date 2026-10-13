@@ -25,12 +25,16 @@ export async function runLiveProfileSmoke(contents, session) {
       assert($('#sensor-cards').children.length===6,'Generic six-sensor default changed');
       assert($('#diagnostic-profile').options.length===27,'Diagnostic profile options missing');
       $('#diagnostic-profile').value='fiat-8gmk';$('#diagnostic-profile').dispatchEvent(new Event('change'));
-      assert(document.querySelectorAll('#sensor-selection-list input').length===105,'Full Fiat catalog is not selectable');
+      assert(document.querySelectorAll('#sensor-selection-list input').length===152,'Expanded Fiat catalog is not selectable');
       assert($('#sensor-cards').children.length===8,'Fiat suggested selection not applied');
       assert($('#profile-description').textContent.includes('pending'),'Manufacturer verification state was hidden');
       $('#sensor-selection-details').open=true;
       $('#sensor-search').value='clutch';$('#sensor-search').dispatchEvent(new Event('input'));
-      assert(document.querySelectorAll('#sensor-selection-list input').length>1&&document.querySelectorAll('#sensor-selection-list input').length<105,'Parameter search does not filter');
+      assert(document.querySelectorAll('#sensor-selection-list input').length>1&&document.querySelectorAll('#sensor-selection-list input').length<152,'Parameter search does not filter');
+      $('#sensor-search').value='multiair';$('#sensor-search').dispatchEvent(new Event('input'));
+      assert(document.querySelectorAll('#sensor-selection-list input').length===22,'MultiAir feedback readings are missing from search');
+      document.querySelector('#sensor-selection-list input[value="8gmk-1996-6"]').click();
+      assert($('#sensor-8gmk-1996-6')&&[...$('#live-channel').options].some(option=>option.value==='8gmk-1996-6'),'New cylinder reading cannot be selected or graphed');
       $('#sensor-search').value='';$('#sensor-search').dispatchEvent(new Event('input'));
       $('[data-sensor-preset="clear"]').click();
       assert($('#connect-sensors').disabled,'Empty selection allowed a connection');
@@ -42,23 +46,25 @@ export async function runLiveProfileSmoke(contents, session) {
       $('[data-sensor-preset="clear"]').click();
       document.querySelector('#sensor-selection-list input[value="mes-10246"]').click();
       assert($('#live-chart').hidden&&$('#live-channel').options.length===0,'Text-only parameters were offered as numeric graphs');
-      for(const key of ['mes-10500','mes-10155'])document.querySelector('#sensor-selection-list input[value="'+key+'"]').click();
-      assert($('#sensor-cards').children.length===3&&$('#live-channel').options.length===2,'Numeric and text parameter cards were not separated');
+      for(const key of ['mes-10500','mes-10155','8gmk-1819-0'])document.querySelector('#sensor-selection-list input[value="'+key+'"]').click();
+      test.fixture.selectedSensors.push('8gmk-1819-0');test.fixture.supportedSensors.push('8gmk-1819-0');test.fixture.channels.push({key:'8gmk-1819-0',staleAfterMs:30000});
+      assert($('#sensor-cards').children.length===4&&$('#live-channel').options.length===3,'Expanded numeric and text parameter cards were not separated');
       assert(test.requests.length===0,'Changing selections opened an adapter');
       $('#adapter-transport').value='wifi';$('#adapter-transport').dispatchEvent(new Event('change'));
       $('#wifi-host').value='192.168.0.10';$('#wifi-host').dispatchEvent(new Event('input'));
       $('#connect-sensors').click();await until(()=>$('#diagnostic-profile').disabled&&test.requests.length===1);
       await until(()=>!$('#record-start').disabled);
-      assert(test.requests[0].profileId==='fiat-8gmk'&&test.requests[0].channels.length===3&&test.requests[0].channels.every(key=>test.fixture.selectedSensors.includes(key)),'Connect did not carry exactly the selected profile channels');
+      assert(test.requests[0].profileId==='fiat-8gmk'&&test.requests[0].channels.length===4&&test.requests[0].channels.every(key=>test.fixture.selectedSensors.includes(key)),'Connect did not carry exactly the selected profile channels');
       assert([...document.querySelectorAll('#sensor-selection-list input')].every(input=>input.disabled),'Selection changed during a live session');
       assert($('#sensor-strip').hidden,'Generic sensor strip represented manufacturer readings');
       assert(!$('#assistant-include-context').checked,'Live connection opted the user into assistant sharing');
       $('#record-start').click();
     `);
-    sample({'mes-10500':900,'mes-10155':110.5,'mes-10246':'Pressed',rpm:9999},{'mes-10500':'valid','mes-10155':'valid','mes-10246':'valid'},{timestamp:new Date(Date.now()-20000).toISOString()});
+    sample({'mes-10500':900,'mes-10155':110.5,'mes-10246':'Pressed','8gmk-1819-0':50,rpm:9999},{'mes-10500':'valid','mes-10155':'valid','mes-10246':'valid','8gmk-1819-0':'valid'},{timestamp:new Date(Date.now()-20000).toISOString()});
     await check(`
       await until(()=>$('#sensor-mes-10246 .sensor-value').textContent==='Pressed');
       assert($('#sensor-mes-10500 .sensor-value').textContent==='900','Numeric manufacturer reading was lost');
+      assert($('#sensor-8gmk-1819-0 .sensor-value').textContent==='50.00','New boost duty reading lost its display scaling');
       assert($('#sensor-mes-10246 .sensor-state').textContent==='Live reading','Text status was incorrectly stale');
       assert($('#record-count').textContent.startsWith('1 '),'Selected typed sample was not recorded');
       assert(!$('#sensor-rpm'),'Unselected generic parameter created a card');
@@ -81,7 +87,8 @@ export async function runLiveProfileSmoke(contents, session) {
       $('#assistant-include-context').checked=true;$('#assistant-include-context').dispatchEvent(new Event('change'));
       const context=JSON.parse($('#assistant-context-preview').textContent).sensors;
       assert(context.source==='live-manufacturer'&&context.profileId==='fiat-8gmk'&&context.ecu==='18DAF110','Assistant context lost source attribution');
-      assert(context.values.length===3&&context.values.some(value=>value.value==='Pressed')&&context.values.some(value=>value.quality==='decode-error'&&value.value===null&&value.stale),'Assistant context lost typed status or quality');
+      assert(context.values.length===4&&context.values.some(value=>value.value==='Pressed')&&context.values.some(value=>value.quality==='decode-error'&&value.value===null&&value.stale),'Assistant context lost typed status or quality');
+      assert(context.values.some(value=>value.name==='Boost actuator duty cycle'&&value.value===50),'Assistant context lost the new boost duty reading');
       assert(context.identity.hardwareNumber==='MM8GMKHW670'&&!('vin' in context.identity),'Assistant identity was missing or included an extra field');
       $('#assistant-include-context').checked=false;$('#assistant-include-context').dispatchEvent(new Event('change'));$('#assistant-close').click();
       $('#disconnect-sensors').click();await until(()=>!$('#diagnostic-profile').disabled);
@@ -89,11 +96,12 @@ export async function runLiveProfileSmoke(contents, session) {
       assert([...document.querySelectorAll('.sensor-value')].every(value=>value.textContent==='—'),'Switching profiles retained another profile’s values');
       $('#record-export').click();await until(()=>!$('#record-export').disabled);
       const recorded=JSON.parse(await window.__liveProfileSmoke.lastBlob.text());
-      assert(recorded.profileId==='fiat-8gmk'&&recorded.source==='live-manufacturer'&&recorded.selectedSensors.length===3,'Switching profiles relabelled the completed recording');
+      assert(recorded.profileId==='fiat-8gmk'&&recorded.source==='live-manufacturer'&&recorded.selectedSensors.length===4,'Switching profiles relabelled the completed recording');
+      assert(recorded.samples[0].values['8gmk-1819-0']===50,'Recording lost the additional boost duty reading');
       assert(recorded.samples.length===2&&recorded.samples[0].values['mes-10246']==='Pressed'&&!('rpm' in recorded.samples[0].values),'Recording lost status text or included unselected data');
       assert(recorded.samples[1].quality['mes-10155']==='decode-error'&&recorded.samples[1].values['mes-10155']===null,'Recording discarded an unavailable result');
     `);
-    return {manufacturerCatalogPicker:true,selectedParameterLimit:true,numericAndTextCards:true,profileSelectionLocked:true,selectedConnectRequest:true,typedManufacturerRecording:true,manufacturerContextProvenance:true,perChannelStaleness:true,liveSourceIsolation:true,recordingProfilePreserved:true};
+    return {manufacturerCatalogPicker:true,expandedMultiAirSearch:true,additionalSensorRecordingAndContext:true,selectedParameterLimit:true,numericAndTextCards:true,profileSelectionLocked:true,selectedConnectRequest:true,typedManufacturerRecording:true,manufacturerContextProvenance:true,perChannelStaleness:true,liveSourceIsolation:true,recordingProfilePreserved:true};
   } finally {
     await check(`
       const test=window.__liveProfileSmoke;

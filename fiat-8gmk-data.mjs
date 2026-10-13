@@ -109,3 +109,46 @@ export const FIAT_8GMK_ROWS = Object.freeze([
   Object.freeze(["mes-10538","Failure indicator light","","22191F",0,2,"bitw","04000400ON|00040004Flashing (flywheel self learn)|10001000Flashing (misfire)|00400040Flashing (neutral learn)|01000100Flashing (power limitation)|00000000OFF"]),
   Object.freeze(["mes-11187","Performance limit function","","221C01",0,1,"bits","0101Active|0100Not active"]),
 ]);
+
+// Additional read-only facts independently reconstructed from AlfaOBD PC 2.5.7.0.
+// See docs/alfaobd-investigation.md for reconciliation and acceptance limits.
+// Columns: DID, label, unit, byte width, display precision, signed, direct factor,
+// offset, data offset, decoder kind. Unlike MES formats, precision does not scale.
+// DIDs 1205/1999 lack decoders; overlapping/conflicting MES records stay unchanged.
+export const FIAT_8GMK_EXTRA_ROWS = Object.freeze([
+  ['19B0', 'Driver-set speed limit', 'km/h', 1, 0, false, 1],
+  ['1001', 'Fuel level', '%', 1, 1, false, 100 / 255],
+  ['1006', 'Ignition supply voltage (+15)', 'V', 1, 1, false, 0.1],
+  ['1204', 'Battery supply ADC (+30)', 'V', 2, 3, false, 0.001],
+  ['197D', 'Main relay feedback voltage', 'V', 2, 3, false, 0.001],
+  ['197E', 'Main relay load voltage', 'V', 2, 3, false, 1 / 16],
+  ['1801', 'Phonic wheel / camshaft reference angle', '°', 2, 0, false, 1],
+  ['1865', 'Throttle position track 1 voltage', 'mV', 2, 2, false, 3.90625],
+  ['1866', 'Throttle position track 2 voltage', 'mV', 2, 2, false, 3.90625],
+  ['1938', 'Intake manifold pressure sensor voltage', 'V', 2, 3, false, 0.001],
+  ['1819', 'Boost actuator duty cycle', '%', 2, 2, false, 100 / 65535],
+  ['1817', 'Engine resistant torque', '%', 2, 2, false, 100 / 65535],
+  ['18B1', 'Nominal indicated engine torque', '%', 2, 2, false, 100 / 65535],
+  ['18CC', 'Idle controller torque request', 'Nm', 2, 1, true, 0.1],
+  ['183A', 'Idle fast torque', 'Nm', 2, 3, true, 1 / 16],
+  ['183B', 'Idle torque reserve', 'Nm', 2, 3, true, 1 / 16],
+  ['183C', 'Idle slow torque', 'Nm', 2, 3, true, 1 / 32],
+  ['1822', 'Lambda sensor heater duty cycle', '%', 2, 2, false, 100 / 65535],
+  ['182B', 'Lambda oxygen concentration current', 'mA', 2, 3, true, 1 / 1024],
+  ['1A25', 'Upstream lambda sensor voltage', 'V', 2, 3, false, 0.001],
+  ['18E0', 'Lambda sensor current', 'mA', 2, 3, true, 1 / 1024],
+  ['18AC', 'Upstream lambda sensor temperature', '°C', 2, 0, false, 1],
+  ['1837', 'Modelled catalyst temperature', '°C', 1, 0, false, 1, -50],
+  ['1986', 'MultiAir target late-opening angle', '°', 2, 3, false, 1 / 16, 0, 0, 'vva-late-opening'],
+  ['1987', 'MultiAir target early-closing angle', '°', 2, 3, false, 1 / 16],
+  ['198D', 'MultiAir oil temperature sensor voltage', 'mV', 2, 3, false, 1.220703125],
+  ['198F', 'MultiAir solenoid coil temperature', '°C', 2, 3, false, 1 / 8],
+  ...['1996', '1997'].flatMap((did, index) => [0, 1, 2, 3].map(cylinder =>
+    [did, `MultiAir ${index ? 'ON' : 'OFF'} adaptation delta, temp 1 (Cyl. ${cylinder + 1})`, 'µs', 2, 1, true, 0.2, 0, cylinder * 2])),
+  ['199A', 'MultiAir second actuation opening angle (Bank A)', '°', 2, 3, true, 1 / 16],
+  ['199B', 'MultiAir second actuation closing angle (Bank A)', '°', 2, 3, true, 1 / 16],
+  ...['199E', '199F'].flatMap((did, index) => [0, 1, 2, 3].map(cylinder =>
+    [did, `MultiAir corrected ${index ? 'OFF' : 'ON'} time (Solenoid ${cylinder + 1})`, 'µs', 2, 1, false, 0.2, 0, cylinder * 2])),
+  ['1858', 'Air-conditioning pressure sensor voltage', 'V', 2, 3, false, 0.0048828125],
+  ['1BF5', 'Accumulated gasoline percentage', '%', 2, 3, false, 1 / 16],
+].map(Object.freeze));
