@@ -81,6 +81,22 @@ Module coverage is separate from application conveniences such as multi-signal g
 - **Operations:** retain the pre-operation report, verify required vehicle conditions, exercise completion/error/cancellation paths, and verify resulting state. A positive transport response alone may not mean the procedure completed.
 - **Vehicle acceptance:** record app version, module identity, adapter/lead, operation, expected result and observed result. Automated fixtures and Simulation remain separate from physical acceptance.
 
+## Additional reference: AlfaOBD
+
+AlfaOBD is a second diagnostic reference for the remaining work. Its [supported-vehicle list](https://www.alfaobd.com/supported_cars.html) includes the Fiat 500X from 2015. Its [published features](https://www.alfaobd.com/) include active diagnostics, service resets, ABS bleeding, transmission calibration, body configuration and PROXI alignment. These are product-wide feature statements; the exact 500X ECU variant and procedure still need verification.
+
+The [Windows help](https://www.alfaobd.com/AlfaOBD_Help.pdf), Active Diag section, describes detecting the connected ECU modification and adding procedures specific to that modification after identification. The reference comparison should therefore check variant-specific applicability alongside each procedure's requests, inputs, preconditions, duration, completion and stop handling. A family-level label alone does not establish support for every member of that family.
+
+| Comparison priority | Evidence to recover before implementation |
+| --- | --- |
+| PROXI and body configuration | Original configuration, participating nodes, variant/layout matching, per-node completion and interrupted alignment handling |
+| Remaining ABS and parking-brake procedures | Mechanical setup, measured conditions, exact activation/release sequence and recovery after interruption |
+| Gearbox and remaining engine learning | Applicable ECU variants, required temperatures/states, inputs, completion criteria and aftercare |
+| Sensors and actuator completeness | Exact 500X variant catalogue, scaling, status meanings and distinctions between unavailable readings and failed requests |
+| Adapter support | Physical bus routing and interface-specific switching; the official guidance distinguishes the grey lead for the second high-speed CAN bus and interfaces that can switch the other buses internally |
+
+On 13 October 2026, the local `AlfaOBDsetup.exe` reports version 2.3.1. The [official download page](https://www.alfaobd.com/download.html) lists PC version 2.5.7.0. Keep observations from the older installer, the current portable archive and the published documentation attributed to their respective versions. Adding AlfaOBD as a reference does not change Tuner Workshop's implemented or vehicle-accepted coverage counts.
+
 ## Evidence boundary
 
 Public source pointers: the `fiat-8gmk`, `fiat-modules`, `module-transport`, `module-diagnostics`, `module-service`, `module-session-actions`, `fiat-diagnostics`, `obd-diagnostics`, `instrument-service`, `service-tools`, `sensor-session`, `can-diagnostics` and `diagnostic-catalog` modules, the diagnostics/live UI and their tests. The diagnostic catalogue validates metadata and session attribution; it does not itself enable commands.
