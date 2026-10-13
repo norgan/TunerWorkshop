@@ -1,5 +1,6 @@
 // Independently authored Fiat 500X actuator workflows. Factual request sequences
 // and timing were checked against the installed CCAN29/BHCAN29 executor.
+// The cluster self-test return is corroborated by AlfaOBD 2.5.7.0 device 8865.
 // Static protocol support does not establish physical operation on a vehicle.
 const freeze = value => {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
@@ -116,7 +117,9 @@ const instrument = [
     actuator('fiat-instrument', id, label, [`2F${did}03FF`, `2F${did}037F`, `2F${did}033F`, `2F${did}03FF`, `2F${did}0300`, `2F${did}00`], 'The gauge will move through test positions. Its indication is not a vehicle measurement during this test.')),
   actuator('fiat-instrument', 'beeper', 'Instrument warning beeper', ['2F557303FF', '2F55730000'], 'The instrument warning sound will play briefly.'),
   actuator('fiat-instrument', 'illumination', 'Instrument illumination', ['2F55720308', '2F55720304', '2F55720302', '2F55720300', '2F557200'], 'The instrument brightness will change during this test.'),
-  unavailable('fiat-instrument', 'self-test', 'Instrument self-test', 'The recovered sequence ends with a forced output value. An explicit return-of-control workflow is not established.'),
+  // Both accepted DASHX1 ISO codes map to AlfaOBD device 8865. Its Autocheck
+  // selector 0x7B starts for ten seconds and stops with explicit return control.
+  actuator('fiat-instrument', 'self-test', 'Instrument self-test', ['2F557B03FF', '2F557B00'], 'The instrument panel will run its self-test for ten seconds. Its indications are test outputs during this operation.', 10000),
 ];
 const climateTools = profileId => [
   actuator(profileId, 'left-mixer', profileId === 'fiat-climate-auto' ? 'Left temperature flap' : 'Temperature flap', flap('56BE'), climate, 20000),

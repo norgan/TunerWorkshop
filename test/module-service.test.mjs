@@ -32,7 +32,7 @@ function fixture(profileId, override = () => undefined) {
 
 test('catalogue exposes all non-engine actuator rows, with specific unavailable mechanical workflows', () => {
   assert.equal(MODULE_SERVICE_TOOLS.length, 106);
-  assert.equal(MODULE_SERVICE_TOOLS.filter(tool => tool.available).length, 82);
+  assert.equal(MODULE_SERVICE_TOOLS.filter(tool => tool.available).length, 83);
   assert.equal(getModuleServiceTools('fiat-body').length, 28);
   assert.equal(getModuleServiceTools('fiat-instrument').length, 21);
   assert.equal(getModuleServiceTools('fiat-climate-auto').length, 11);
@@ -79,6 +79,47 @@ test('climate distributor retains the established 200-second workflow', async ()
     '22F1A5', '221000', '221002', '2F56C003FF', '2F56C00300', '2F56C0037F', '2F56C00300', '2F56C000',
   ]);
   assert.deepEqual(transport.waits, [50000, 50000, 50000, 50000]);
+});
+
+test('cluster self-test is bound to the two established identities and explicitly returns control after ten seconds', async () => {
+  assert.deepEqual(getFiatModuleConnection('fiat-instrument').isoCodes, ['0003502D16', '3283760D0D']);
+  for (const iso of ['0003502D16', '3283760D0D']) {
+    const transport = fixture('fiat-instrument', request => request === '22F1A5' ? data(`62F1A5${iso}`) : undefined);
+    const result = await runModuleServiceTool('fiat-instrument-self-test', transport);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.stopStatus, 'acknowledged');
+    assert.equal(result.physicalOutcomeVerified, false);
+    assert.deepEqual(transport.calls.map(call => call.request), [
+      '22F1A5', '221000', '221002', '2F557B03FF', '2F557B00',
+    ]);
+    assert.deepEqual(transport.waits, [10000]);
+  }
+  // Another instrument variant in the reference remains outside this profile.
+  const otherVariant = fixture('fiat-instrument', request => request === '22F1A5' ? data('62F1A50003502D15') : undefined);
+  const rejected = await runModuleServiceTool('fiat-instrument-self-test', otherVariant);
+  assert.equal(rejected.status, 'failed');
+  assert.deepEqual(otherVariant.calls.map(call => call.request), ['22F1A5']);
+  assert.equal(moduleServiceRequests('fiat-instrument-self-test').includes('2F557B0300'), false);
+});
+
+test('cluster self-test cancellation releases the output and a lost release is never reported as completed', async () => {
+  const controller = new AbortController();
+  const transport = fixture('fiat-instrument');
+  transport.wait = async () => { controller.abort(); };
+  const cancelled = await runModuleServiceTool('fiat-instrument-self-test', { ...transport, signal: controller.signal });
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.stopStatus, 'acknowledged');
+  assert.deepEqual(transport.calls.slice(3).map(call => call.request), ['2F557B03FF', '2F557B00']);
+  assert.equal(transport.calls.at(-1).cleanup, true);
+
+  const interrupted = fixture('fiat-instrument', request => {
+    if (request === '2F557B00') throw new Error('Return-control acknowledgement lost');
+  });
+  const unconfirmed = await runModuleServiceTool('fiat-instrument-self-test', interrupted);
+  assert.equal(unconfirmed.status, 'failed');
+  assert.equal(unconfirmed.stopStatus, 'unconfirmed');
+  assert.equal(unconfirmed.requiresDisconnect, true);
+  assert.equal(interrupted.calls.filter(call => call.request === '2F557B00').length, 1);
 });
 
 test('boot, lock and horn tests retain distinct pulse timing', async () => {

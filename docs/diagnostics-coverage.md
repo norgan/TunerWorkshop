@@ -4,6 +4,8 @@ This document tracks progress towards MultiECUScan-style diagnostics for the **F
 
 Version 0.11.0 adds **23 usable controller/variant profiles**, **581 readable parameter definitions** and **82 actuator workflows** beyond the existing engine and service-reminder profiles. The selector includes all 26 reference controller/variant entries plus Standard OBD. These include alternative engines and optional equipment, not 26 modules confirmed fitted to one car. The app does not yet replace every MultiECUScan function.
 
+**Source follow-up, 13 October 2026:** the [AlfaOBD investigation](alfaobd-investigation.md) established the instrument self-test's explicit return-of-control sequence for both supported cluster identities. Source now enables that ten-second test, bringing non-engine executable actuator workflows to **83**, with **23** mechanical procedures still unavailable. The table below records the packaged 0.11.0 baseline; this follow-up has not been packaged, installed or accepted on a vehicle. It passed 47 focused module, diagnostic, session and service tests, including cancellation and a lost return-control acknowledgement.
+
 ## Current source coverage
 
 | Capability | Implemented in the app | Evidence and remaining checks |
