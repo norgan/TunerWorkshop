@@ -3,7 +3,7 @@ export async function runRendererSmoke(contents){
     const assert=(value,message)=>{if(!value)throw new Error(message);};
     const {CalibrationProject}=await import('./core.mjs');
     const {parseHexBytes}=await import('./formats.mjs');
-    assert(document.title==='Tune Workshop','Wrong desktop title');
+    assert(document.title==='Tuner Workshop','Wrong desktop title');
     assert(document.querySelectorAll('[data-cell]').length===48,'Editor module did not render');
     const input=new TextEncoder().encode('GEN_FILE\\0V862MH97\\0MM8GMKHW670\\0');
     const p=new CalibrationProject(input,{name:'Synthetic container test'});

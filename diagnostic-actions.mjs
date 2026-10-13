@@ -5,8 +5,8 @@ const keysByAction=Object.freeze({
   'read-faults':['action','sessionId'],
   'read-identification':['action','sessionId'],
   'read-freeze-frame':['action','sessionId','dtcId'],
-  'clear-faults':['action','sessionId','confirmation'],
-  'run-service':['action','sessionId','confirmation','toolId','acknowledged'],
+  'clear-faults':['action','sessionId','confirmation','engineStoppedConfirmed','stationaryConfirmed'],
+  'run-service':['action','sessionId','confirmation','toolId','acknowledged','engineStoppedConfirmed','stationaryConfirmed'],
 });
 export function validateDiagnosticAction(input){
   if(!input||typeof input!=='object'||Array.isArray(input)||!Object.hasOwn(keysByAction,input.action))throw new DiagnosticError('Choose a supported diagnostic action.','invalid_request');
@@ -15,5 +15,6 @@ export function validateDiagnosticAction(input){
   if(input.action==='clear-faults'&&input.confirmation!=='clear-faults')throw new DiagnosticError('Confirm fault clearing before continuing.','confirmation_required');
   if(input.action==='run-service'&&(input.confirmation!=='run-service'||input.acknowledged!==true||typeof input.toolId!=='string'||!/^[a-z0-9-]{1,80}$/.test(input.toolId)))throw new DiagnosticError('Review and confirm the selected service procedure.','confirmation_required');
   if(input.dtcId!==undefined&&(typeof input.dtcId!=='string'||!/^[0-9A-Fa-f]{6}$/.test(input.dtcId)))throw new DiagnosticError('Select a valid fault for its snapshot.','invalid_request');
+  for(const key of ['engineStoppedConfirmed','stationaryConfirmed'])if(input[key]!==undefined&&typeof input[key]!=='boolean')throw new DiagnosticError('Vehicle condition confirmations must be explicit choices.','invalid_request');
   return {...input};
 }

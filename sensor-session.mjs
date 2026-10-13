@@ -7,6 +7,9 @@ import {OBD_DIAGNOSTIC_REQUESTS,obdReply,obdCode,decodeObdFaults,decodeReadiness
 import {FIAT_DIAGNOSTIC_REQUESTS,FIAT_IDENTIFICATION_DEFINITIONS,buildFiatSnapshotRequest,decodeFiatDtcResponse,decodeFiatClearResponse,decodeFiatSnapshotResponse,decodeFiatIdentificationResponse} from './fiat-diagnostics.mjs';
 import {getServiceTool,serviceToolRequests,runServiceTool,serviceWait} from './service-tools.mjs';
 import {INSTRUMENT_SERVICE_PROFILE,INSTRUMENT_SERVICE_CONNECTION,decodeInstrumentIdentity,decodeInstrumentParameter,resetInstrumentService} from './instrument-service.mjs';
+import {getFiatModuleProfile,getFiatModuleConnection,decodeFiatModuleIdentity,decodeFiatModuleParameter,getFiatModuleIdentityFallback,decodeFiatModuleFallbackIdentity} from './fiat-modules.mjs';
+import {buildModuleTransport} from './module-transport.mjs';
+import {validateModuleAction,runModuleAction} from './module-session-actions.mjs';
 const assert=(condition,message)=>{if(!condition)throw new Error(message);};
 // Standard ELM protocol 7 is ISO15765 29-bit / 500k. TP with memory off
 // selects it without saving a default. Variable DLC and timing match the
@@ -72,8 +75,10 @@ export class BaseSensorSession extends Emitter {
     const {transport='serial',path,baudRate=38400,host,port:tcpPort=35000,profileId='generic-obd'}=options;
     assert(['disconnected', 'error'].includes(this.#state.status) && !this.#port, 'A sensor connection is already active.');
     const selected=selectProfileChannels(profileId,options.channels),instrument=profileId==='fiat-service',manufacturer=profileId!=='generic-obd';
+    const moduleProfile=!['generic-obd','fiat-8gmk','fiat-service'].includes(profileId)?getFiatModuleProfile(profileId):null;
+    const moduleTransport=moduleProfile?buildModuleTransport(getFiatModuleConnection(profileId),moduleProfile.channels):null;
     this.#validateConnection({...options,transport,baudRate,port:tcpPort});
-    this.#allowed=instrument?SERVICE_ALLOWED:manufacturer?FIAT_ALLOWED:ALLOWED;
+    this.#allowed=moduleTransport?.allowed??(instrument?SERVICE_ALLOWED:manufacturer?FIAT_ALLOWED:ALLOWED);
     const generation = ++this.#generation;
     this.#state = { status: 'connecting', transport, path: ['serial','bluetooth'].includes(transport) ? path : null, baudRate: ['serial','bluetooth'].includes(transport) ? baudRate : null, host: transport === 'wifi' ? host : null, port: transport === 'wifi' ? tcpPort : null, protocol: null, ecu: null, supportedSensors: [], values: {}, sampleTimes: {}, lastSampleAt: null, error: null, readOnly: true };
     Object.assign(this.#state,{profileId,selectedSensors:selected.map(d=>d.key),channels:selected,quality:{},parameterErrors:{},sessionId:globalThis.crypto.randomUUID()});
@@ -90,10 +95,12 @@ export class BaseSensorSession extends Emitter {
       await this.#open(port, generation);
       if(transport==='ble')this.#state.deviceName=port.deviceName||'BLE adapter';
       this.#check(generation);
-      for (const command of instrument?SERVICE_SETUP:manufacturer?FIAT_SETUP:INITIALIZE) {
+      for (const command of moduleTransport?.setup??(instrument?SERVICE_SETUP:manufacturer?FIAT_SETUP:INITIALIZE)) {
         const response = await this.#command(command, command === 'ATZ' ? Math.max(5000, this.#timeout) : this.#timeout);
         this.#check(generation);
-        const lines = cleanLines(response, command); adapterError(lines);
+        const lines = cleanLines(response, command);
+        if(command==='ATPB0104'&&!lines.includes('OK'))throw new Error('This adapter does not support the 125 kbit/s setup required by this controller. Use a compatible ELM327 or OBDLink interface.');
+        adapterError(lines);
         if (command === 'ATZ') assert(lines.some(line => /ELM327|STN[0-9]|OBDLINK/.test(line)), 'Adapter did not identify as ELM327-compatible.');
         else assert(lines.includes('OK'), `Adapter did not accept required setup ${command}.`);
       }
@@ -206,7 +213,7 @@ export class BaseSensorSession extends Emitter {
       if(parsed.status==='positive'){
         result=parsed;completed=true;
       }else{
-        result={status:'unavailable',reason:`ECU response 0x${parsed.code.toString(16).toUpperCase().padStart(2,'0')}`};
+        result={status:'unavailable',code:parsed.code,reason:`ECU response 0x${parsed.code.toString(16).toUpperCase().padStart(2,'0')}`};
         completed=parsed.code!==0x78;
       }
     }
@@ -214,11 +221,13 @@ export class BaseSensorSession extends Emitter {
   }
   async #connectFiat(generation,selected){
     const instrument=this.#state.profileId==='fiat-service';
-    this.#state.protocol='7';this.#state.ecu=instrument?INSTRUMENT_SERVICE_CONNECTION.responseId:'18DAF110';
+    const moduleProfile=!['fiat-8gmk','fiat-service'].includes(this.#state.profileId)?getFiatModuleProfile(this.#state.profileId):null;
+    const connection=moduleProfile?getFiatModuleConnection(this.#state.profileId):null;
+    this.#state.protocol=connection?.protocol==='BHCAN29'?'B':'7';this.#state.ecu=connection?.responseId??(instrument?INSTRUMENT_SERVICE_CONNECTION.responseId:'18DAF110');
     const startSession=async()=>{
       let sessionType=0x03,result=terminalAcknowledgement(await this.#fiatMessage('1003',generation),0x10);
       // This fallback is present in the recovered transport, only for NRC12.
-      if(result.reply?.[0]===0x7f&&result.reply[2]===0x12){sessionType=0x92;result=terminalAcknowledgement(await this.#fiatMessage('1092',generation),0x10);}
+      if((!connection||connection.fallbackSession==='1092')&&result.reply?.[0]===0x7f&&result.reply[2]===0x12){sessionType=0x92;result=terminalAcknowledgement(await this.#fiatMessage('1092',generation),0x10);}
       return {sessionType,...result};
     };
     let {sessionType,reply:start,noData}=await startSession();
@@ -228,9 +237,20 @@ export class BaseSensorSession extends Emitter {
       assert(lines.includes('OK'),'Adapter did not accept fixed-length CAN fallback.');
       ({sessionType,reply:start}=await startSession());
     }
-    assert(start&&[2,6].includes(start.length)&&start[0]===0x50&&start[1]===sessionType,'The selected controller did not start its diagnostic session. Check ignition, direct OBD connection and the selected vehicle profile.');
+    assert(start&&[2,6].includes(start.length)&&start[0]===0x50&&start[1]===sessionType,`The selected controller did not start its diagnostic session. Check ignition and ${connection?.adapterLabel||'direct OBD connection'}. This controller must be fitted to the vehicle.`);
     const iso=await this.#fiatRead('22F1A5',generation,5);
-    if(instrument){
+    if(moduleProfile){
+      const primary=iso.status==='positive'?[0x62,0xf1,0xa5,...iso.data]:iso.code!==undefined?[0x7f,0x22,iso.code]:[];
+      const fallback=getFiatModuleIdentityFallback(this.#state.profileId,primary);
+      if(fallback){
+        const variant=await this.#fiatRead(fallback.request,generation,fallback.minimumBytes);
+        assert(variant.status==='positive','The transmission did not return its variant identity. No parameter polling was started.');
+        this.#state.identity=decodeFiatModuleFallbackIdentity(this.#state.profileId,variant.data);
+      }else{
+        assert(iso.status==='positive','The selected controller did not identify itself. No parameter polling was started.');
+        this.#state.identity=decodeFiatModuleIdentity(this.#state.profileId,iso.data);
+      }
+    }else if(instrument){
       assert(iso.status==='positive','The instrument panel did not identify itself. No parameter polling was started.');
       this.#state.identity=decodeInstrumentIdentity(iso.data);
     }else{
@@ -245,7 +265,7 @@ export class BaseSensorSession extends Emitter {
     this.#state.supportedSensors=selected.map(d=>d.key);
     this.#state.channels=selected.map(d=>({...d,staleAfterMs:Math.max(15000,Math.min(30000,selected.length*(this.#interval+500)*2))}));
     this.#lastKeepalive=Date.now();this.#status('streaming');
-    const definitions=instrument?INSTRUMENT_SERVICE_PROFILE.channels:FIAT_8GMK_DEFINITIONS;
+    const definitions=moduleProfile?.channels??(instrument?INSTRUMENT_SERVICE_PROFILE.channels:FIAT_8GMK_DEFINITIONS);
     void this.#pollFiat(generation,selected.map(channel=>definitions.find(d=>d.key===channel.key)));
   }
   async #pollFiat(generation,sensors){
@@ -267,7 +287,7 @@ export class BaseSensorSession extends Emitter {
         const timestamp=new Date().toISOString(),values={},quality={},parameterErrors={};
         for(const sensor of group){
           if(result.status==='positive'){
-            values[sensor.key]=(this.#state.profileId==='fiat-service'?decodeInstrumentParameter:decodeFiatParameter)(sensor.key,result.data);quality[sensor.key]='valid';
+            values[sensor.key]=this.#state.profileId==='fiat-service'?decodeInstrumentParameter(sensor.key,result.data):this.#state.profileId==='fiat-8gmk'?decodeFiatParameter(sensor.key,result.data):decodeFiatModuleParameter(this.#state.profileId,sensor.key,result.data);quality[sensor.key]='valid';
             delete this.#state.parameterErrors[sensor.key];
           }else{values[sensor.key]=null;quality[sensor.key]='unavailable';parameterErrors[sensor.key]=result.reason;this.#state.parameterErrors[sensor.key]=result.reason;}
           this.#state.sampleTimes[sensor.key]=timestamp;
@@ -312,10 +332,12 @@ export class BaseSensorSession extends Emitter {
     if(this.#diagnosticBusy)throw new DiagnosticError('A diagnostic action is already running.','busy');
     if(this.#state.profileId==='generic-obd'&&!['6','7','8','9'].includes(this.#state.protocol))throw new DiagnosticError('These diagnostic tools require a CAN connection. Sensor reading remains available.','unsupported');
     const instrument=this.#state.profileId==='fiat-service',manufacturer=this.#state.profileId!=='generic-obd';
+    const module=manufacturer&&!instrument&&this.#state.profileId!=='fiat-8gmk';
+    if(module)validateModuleAction(this.#state.profileId,options);
     if(!manufacturer&&['clear-faults','run-service'].includes(options.action))throw new DiagnosticError('Select the Fiat engine profile for this action.','unsupported');
     if(instrument&&!['read-identification','run-service'].includes(options.action))throw new DiagnosticError('Fault tools are not available for the service-reminder profile. Select the engine profile to read engine faults.','unsupported');
     if(instrument&&options.action==='run-service'&&options.toolId!=='service-interval-reset')throw new DiagnosticError('This procedure does not belong to the connected service controller.','unsupported');
-    if(!instrument&&options.action==='run-service'){
+    if(!instrument&&!module&&options.action==='run-service'){
       let tool;try{tool=getServiceTool(options.toolId);}catch{throw new DiagnosticError('Choose a known procedure for this engine.','invalid_request');}
       if(!tool.available)throw new DiagnosticError(tool.unavailableReason,'unsupported');
     }
@@ -328,6 +350,12 @@ export class BaseSensorSession extends Emitter {
       controller?.signal.throwIfAborted();
       this.#progress({message:'Reading from the connected ECU…'});
       const common={profileId:this.#state.profileId,ecu:this.#state.ecu,sessionId:this.#state.sessionId,capturedAt:new Date().toISOString()};
+      if(module){
+        this.#diagnosticAllowed=new Set(['3E00']);
+        return runModuleAction({options,state:this.#state,allow:request=>this.#diagnosticAllowed.add(request),
+          command:(request,{cleanup}={})=>{if(!cleanup)controller?.signal.throwIfAborted();return this.#diagnosticPayload(request,generation);},
+          signal:controller?.signal,wait:(ms,opts={})=>this.#serviceDelay(ms,opts,generation),onProgress:progress=>this.#progress(progress)});
+      }
       this.#diagnosticAllowed=new Set(instrument?['2F556901']:manufacturer?[...Object.values(FIAT_DIAGNOSTIC_REQUESTS),...FIAT_IDENTIFICATION_DEFINITIONS.map(d=>d.request)]:OBD_DIAGNOSTIC_REQUESTS);
       const terminal=result=>{if(result.status!=='positive')throw new DiagnosticError(result.message||'The ECU did not complete this request.','ecu_response');return result;};
       if(instrument){

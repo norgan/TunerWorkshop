@@ -1,6 +1,6 @@
 {
-  "name": "tune-workshop",
-  "version": "0.10.0",
+  "name": "tuner-workshop",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "description": "Local offline calibration editor foundation for the Fiat 500X project",
@@ -25,6 +25,6 @@
     "electron-builder": "26.15.3"
   },
   "main": "desktop/main.mjs",
-  "author": "Tune Workshop",
+  "author": "Tuner Workshop",
   "license": "UNLICENSED"
 }

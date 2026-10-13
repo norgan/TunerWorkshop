@@ -10,7 +10,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 export const MAX_JSON_BYTES = 256 * 1024;
 export const MAX_EVENT_SUBSCRIBERS = 8;
 const files = new Map([
-  ...['diagnostics-ui','diagnostic-actions','obd-diagnostics','fiat-diagnostics','fiat-diagnostics-data','service-tools','service-tools-data','instrument-service'].map(name=>['/'+name+'.mjs',[name+'.mjs','text/javascript']]),
+  ...['fiat-modules','fiat-module-data','module-transport','module-session-actions','module-service','module-service-data','module-diagnostics','module-diagnostics-data','diagnostics-ui','diagnostic-actions','obd-diagnostics','fiat-diagnostics','fiat-diagnostics-data','service-tools','service-tools-data','instrument-service'].map(name=>['/'+name+'.mjs',[name+'.mjs','text/javascript']]),
   ['/diagnostics.css', ['diagnostics.css', 'text/css']],
   ['/winols-project.mjs', ['winols-project.mjs', 'text/javascript']],
   ['/map-identification.mjs', ['map-identification.mjs', 'text/javascript']],
@@ -73,11 +73,11 @@ function json(res, status, body, extraHeaders = {}) {
 }
 function requestOrigin(req) {
   const host = req.headers.host, port = req.socket.localPort;
-  if (host !== `localhost:${port}` && host !== `127.0.0.1:${port}`) throw new RequestError(403, 'Use the local Tune Workshop address.');
+  if (host !== `localhost:${port}` && host !== `127.0.0.1:${port}`) throw new RequestError(403, 'Use the local Tuner Workshop address.');
   return `http://${host}`;
 }
 function authorizeApi(req, origin) {
-  if (req.headers['x-tune-workshop'] !== '1') throw new RequestError(403, 'The Tune Workshop request header is required.');
+  if (req.headers['x-tune-workshop'] !== '1') throw new RequestError(403, 'The Tuner Workshop request header is required.');
   const supplied = req.headers.origin;
   if ((supplied !== undefined && supplied !== origin) || req.headers['sec-fetch-site'] === 'cross-site') throw new RequestError(403, 'Cross-origin API requests are not allowed.');
   if (req.method === 'POST' && supplied !== origin) throw new RequestError(403, 'A matching local origin is required.');
@@ -259,12 +259,12 @@ async function startDirectly() {
     disconnectAssistant: assistant.disconnectAssistant, askAssistant: assistant.askAssistant,
   });
   server.on('error', error => {
-    console.error(error.code === 'EADDRINUSE' ? `Tune Workshop could not start: port ${port} is already in use.` : 'Tune Workshop could not start the local server.');
+    console.error(error.code === 'EADDRINUSE' ? `Tuner Workshop could not start: port ${port} is already in use.` : 'Tuner Workshop could not start the local server.');
     process.exitCode = 1;
   });
-  server.listen(port, '127.0.0.1', () => console.log(`Tune Workshop: http://127.0.0.1:${port}`));
+  server.listen(port, '127.0.0.1', () => console.log(`Tuner Workshop: http://127.0.0.1:${port}`));
 }
 const directUrl = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
 if (directUrl === import.meta.url) startDirectly().catch(() => {
-  console.error('Tune Workshop could not start. Check the installed dependencies and local configuration.'); process.exitCode = 1;
+  console.error('Tuner Workshop could not start. Check the installed dependencies and local configuration.'); process.exitCode = 1;
 });

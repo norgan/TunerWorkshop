@@ -90,6 +90,7 @@ export async function runDiagnosticsSmoke(contents, session) {
       await until(()=>$('#diagnostic-connection').textContent.includes('18DAF160'));$('#diagnostics-nav').click();
       assert($('#service-tool').options.length===1&&$('#service-tool').value==='service-interval-reset','Dashboard reset mixed with engine procedures');
       assert($('#diagnostic-read-faults').disabled&&!$('#service-run').disabled,'Instrument action availability incorrect');
+      assert($('#diagnostic-identity').textContent.includes('IAW 8GMK')&&$('#diagnostic-identity').textContent.includes('18DAF110'),'Retained engine identity lost its original controller label');
       $('#service-run').click();
       assert($('#diagnostic-confirm-text').textContent.includes('service is complete'),'Service-completed confirmation missing');
       $('#diagnostic-confirm-yes').click();await until(()=>$('#service-result').textContent.includes('4 → 3'));

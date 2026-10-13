@@ -33,7 +33,7 @@ export function createSettingsStore({ filePath }) {
       catch { return normalizeSettings(); }
     } catch (error) {
       if (error.code === 'ENOENT') return normalizeSettings();
-      throw new Error('Your settings could not be read. Try reopening Tune Workshop.');
+      throw new Error('Your settings could not be read. Try reopening Tuner Workshop.');
     } finally { await handle?.close().catch(() => {}); }
   }
   return {
@@ -63,7 +63,7 @@ export function installSettings({ contents, ipcMain, origin, store }) {
     && event.sender === contents && event.senderFrame === contents.mainFrame
     && isLocalPage(contents.getURL(), origin);
   const handle = action => async (event, value) => {
-    if (!trusted(event)) throw new Error('Settings are only available in the Tune Workshop window.');
+    if (!trusted(event)) throw new Error('Settings are only available in the Tuner Workshop window.');
     try { return await action(value); }
     catch (error) {
       if (error instanceof SettingsValidationError) throw new Error(error.message);

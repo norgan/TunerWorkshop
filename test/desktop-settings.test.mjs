@@ -19,13 +19,13 @@ test('native settings IPC rejects foreign windows, child frames and foreign page
   const f = fixture();
   try {
     for (const event of [{ ...f.event, sender: {} }, { ...f.event, senderFrame: {} }]) {
-      await assert.rejects(f.invoke('read', event), /only available in the Tune Workshop window/);
-      await assert.rejects(f.invoke('save', event, normalizeSettings()), /only available in the Tune Workshop window/);
+      await assert.rejects(f.invoke('read', event), /only available in the Tuner Workshop window/);
+      await assert.rejects(f.invoke('save', event, normalizeSettings()), /only available in the Tuner Workshop window/);
     }
     for (const url of ['http://127.0.0.1:56789/', 'https://example.test/', 'http://127.0.0.1:12345/other.html']) {
       f.navigate(url);
-      await assert.rejects(f.invoke('read'), /only available in the Tune Workshop window/);
-      await assert.rejects(f.invoke('save', f.event, normalizeSettings()), /only available in the Tune Workshop window/);
+      await assert.rejects(f.invoke('read'), /only available in the Tuner Workshop window/);
+      await assert.rejects(f.invoke('save', f.event, normalizeSettings()), /only available in the Tuner Workshop window/);
     }
     assert.deepEqual(f.count(), { reads: 0, writes: 0 });
     f.navigate('http://127.0.0.1:12345/index.html');
@@ -52,8 +52,8 @@ test('destroying the owning window removes settings handlers and invalidates cap
   const save = f.handlers.get('workshop:settings-save');
   f.destroy();
   assert.equal(f.handlers.size, 0);
-  await assert.rejects(read(f.event), /only available in the Tune Workshop window/);
-  await assert.rejects(save(f.event, normalizeSettings()), /only available in the Tune Workshop window/);
+  await assert.rejects(read(f.event), /only available in the Tuner Workshop window/);
+  await assert.rejects(save(f.event, normalizeSettings()), /only available in the Tuner Workshop window/);
   f.dispose();
   assert.deepEqual(f.count(), { reads: 0, writes: 0 });
 });

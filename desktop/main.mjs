@@ -16,7 +16,9 @@ const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const smokeArg=process.argv.find(value=>value.startsWith('--smoke-test='));
 const smokeOutput=smokeArg?resolve(smokeArg.slice('--smoke-test='.length)):null;
 if(smokeOutput)app.setPath('userData',await mkdtemp(join(tmpdir(),'tune-workshop-desktop-test-')));
-app.setName('Tune Workshop');
+// Keep the existing profile across the display-name change: settings, account and single-instance lock.
+else app.setPath('userData',join(app.getPath('appData'),'Tune Workshop'));
+app.setName('Tuner Workshop');
 app.setAppUserModelId('au.tuneworkshop.desktop');
 app.enableSandbox();
 let window,server,sensors,assistant,origin,quitting=false,shutdownPromise,smokeDownloads=0;
@@ -37,7 +39,7 @@ function installMenu(){
     {label:'File',submenu:[{label:'Exit',accelerator:'Alt+F4',click:()=>window?.close()}]},
     {label:'Edit',submenu:[{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'},{type:'separator'},{label:'Settings…',accelerator:'Ctrl+,',click:()=>window?.webContents.send('workshop:open-settings')}]},
     {label:'View',submenu:[{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{type:'separator'},{role:'togglefullscreen'}]},
-    {label:'Help',submenu:[{label:'About Tune Workshop',click:()=>dialog.showMessageBox(window,{type:'info',title:'Tune Workshop',message:`Tune Workshop ${app.getVersion()}`,detail:'Windows calibration editor, Fiat engine diagnostics, service procedures, sensor monitor and tuning assistant. Vehicle validation of the new diagnostic procedures is pending. Calibration flashing and checksum correction remain unimplemented.'})}]}
+    {label:'Help',submenu:[{label:'About Tuner Workshop',click:()=>dialog.showMessageBox(window,{type:'info',title:'Tuner Workshop',message:`Tuner Workshop ${app.getVersion()}`,detail:'Windows calibration editor, Fiat controller diagnostics, actuator tests, service procedures, sensor monitor and tuning assistant. Vehicle validation of the new diagnostic procedures is pending. Calibration flashing and checksum correction remain unimplemented.'})}]}
   ]));
 }
 async function main(){
@@ -48,7 +50,7 @@ async function main(){
   server=createWorkshopServer({session:sensors,availability,listSerialPorts,assistantStatus:assistant.assistantStatus,beginAssistantSignIn:assistant.beginAssistantSignIn,disconnectAssistant:assistant.disconnectAssistant,askAssistant:assistant.askAssistant,accessToken:token});
   await new Promise((done,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',done);});
   origin=`http://127.0.0.1:${server.address().port}`;
-  window=new BrowserWindow({width:1440,height:1000,minWidth:900,minHeight:650,title:'Tune Workshop',backgroundColor:'#11161b',show:false,icon:join(root,'build','icon.ico'),webPreferences:{preload:join(root,'desktop','preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false,devTools:!app.isPackaged}});
+  window=new BrowserWindow({width:1440,height:1000,minWidth:900,minHeight:650,title:'Tuner Workshop',backgroundColor:'#11161b',show:false,icon:join(root,'build','icon.ico'),webPreferences:{preload:join(root,'desktop','preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false,devTools:!app.isPackaged}});
   const contents=window.webContents,ses=contents.session;
   ses.setPermissionRequestHandler((_contents,permission,callback)=>callback(['clipboard-sanitized-write','bluetooth'].includes(permission)&&_contents===contents&&isLocalPage(_contents.getURL(),origin)));
   ses.setPermissionCheckHandler((_contents,permission)=>['clipboard-sanitized-write','bluetooth'].includes(permission)&&_contents===contents&&isLocalPage(_contents.getURL(),origin));
@@ -70,7 +72,7 @@ async function main(){
     if(choice===1)event.preventDefault();
   });
   contents.on('console-message',(_event,...args)=>{const entry=args[0];if(typeof entry==='object'){if(entry.level==='error')renderErrors.push(entry.message);}else if(entry>=3)renderErrors.push(args[1]);});
-  contents.on('render-process-gone',()=>{if(!smokeOutput)dialog.showErrorBox('Tune Workshop stopped','The window stopped unexpectedly. Unsaved changes could not be recovered. Close and reopen the app.');void shutdown();});
+  contents.on('render-process-gone',()=>{if(!smokeOutput)dialog.showErrorBox('Tuner Workshop stopped','The window stopped unexpectedly. Unsaved changes could not be recovered. Close and reopen the app.');void shutdown();});
   ses.on('will-download',(event,item)=>{
     const url=item.getURL(),notify=state=>{if(!contents.isDestroyed())contents.send('workshop:download-finished',{url,state});};
     item.once('done',(_event,state)=>notify(state));
@@ -80,7 +82,7 @@ async function main(){
       const testName=item.getFilename();
       item.setSavePath(join(app.getPath('userData'),testName.endsWith('.ECU-IMAGE.UNVERIFIED-DRAFT.bin')?'synthetic-payload.bin':testName.endsWith('.inspection.json')?'synthetic-inspection.json':testName.startsWith('sensor-recording-')?'synthetic-recording.json':testName.startsWith('diagnostics-')?'synthetic-diagnostics.json':'synthetic-save.tuneworkshop.json'));return;
     }
-    item.setSaveDialogOptions({title:'Save Tune Workshop file',defaultPath:join(app.getPath('downloads'),item.getFilename())});
+    item.setSaveDialogOptions({title:'Save Tuner Workshop file',defaultPath:join(app.getPath('downloads'),item.getFilename())});
   });
   window.on('closed',()=>{window=null;void shutdown().finally(()=>{quitting=true;app.quit();});});
   installMenu();
@@ -195,6 +197,8 @@ async function runSmoke(contents,token){
   if(renderErrors.length)throw new Error('Renderer reported an error: '+renderErrors.join('; '));
   const {runDiagnosticsSmoke}=await import('./diagnostics-smoke.mjs');
   Object.assign(checks,await runDiagnosticsSmoke(contents,sensors));
+  const {runModuleSmoke}=await import('./module-smoke.mjs');
+  Object.assign(checks,await runModuleSmoke(contents,sensors));
   await contents.executeJavaScript('window.workshopDesktop.setServiceActive(true)');
   window.close();
   if(window.isDestroyed())throw new Error('Closing the app abandoned the renderer service guard.');
@@ -223,7 +227,7 @@ app.on('second-instance',()=>{if(window){if(window.isMinimized())window.restore(
 if(!app.requestSingleInstanceLock()){app.exit(0);}else{
   main().catch(async error=>{
     if(smokeOutput){await mkdir(dirname(smokeOutput),{recursive:true});await writeFile(smokeOutput,JSON.stringify({ok:false,error:error.message,stack:error.stack},null,2));}
-    else dialog.showErrorBox('Tune Workshop could not start','The desktop app could not initialise. Restart the app. If the problem persists, keep your saved projects and reinstall the application.');
+    else dialog.showErrorBox('Tuner Workshop could not start','The desktop app could not initialise. Restart the app. If the problem persists, keep your saved projects and reinstall the application.');
     await shutdown();quitting=true;app.exit(1);
   });
 }

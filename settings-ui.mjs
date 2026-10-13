@@ -10,7 +10,7 @@ dialog.setAttribute('aria-describedby', 'settings-description');
 dialog.innerHTML = `
   <form id="settings-form">
     <header class="settings-heading">
-      <div><span class="eyebrow">TUNE WORKSHOP</span><h2 id="settings-title">Settings</h2></div>
+      <div><span class="eyebrow">TUNER WORKSHOP</span><h2 id="settings-title">Settings</h2></div>
       <button id="settings-close" type="button" aria-label="Close settings">×</button>
     </header>
     <p id="settings-description" class="settings-intro">Make the workspace feel right for you. Saved preferences are kept on this computer.</p>

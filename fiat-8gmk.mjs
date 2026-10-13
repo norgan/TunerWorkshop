@@ -1,6 +1,7 @@
 import { SENSOR_DEFINITIONS } from './elm-protocol.mjs';
 import { FIAT_8GMK_ROWS } from './fiat-8gmk-data.mjs';
 import { INSTRUMENT_SERVICE_PROFILE } from './instrument-service.mjs';
+import { FIAT_MODULE_PROFILES } from './fiat-modules.mjs';
 
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const genericDigits = { rpm: 0, coolantTemperature: 0, mapPressure: 0, intakeAirTemperature: 0, throttlePosition: 1, ecuVoltage: 2 };
@@ -26,7 +27,8 @@ export const DIAGNOSTIC_PROFILES = freeze([
   { id: 'generic-obd', label: 'Standard OBD sensors', channels: SENSOR_DEFINITIONS.map(sensor => ({ key: sensor.key, label: sensor.label, unit: sensor.unit, digits: genericDigits[sensor.key], valueType: 'number', staleAfterMs: 5000 })), defaultChannels: SENSOR_DEFINITIONS.map(sensor => sensor.key) },
   { id: 'fiat-8gmk', label: 'Fiat 500X · IAW 8GMK · 105 parameters', channels: FIAT_8GMK_DEFINITIONS.map(({ key, label, unit, digits, valueType, staleAfterMs }) => ({ key, label, unit, digits, valueType, staleAfterMs })),
     defaultChannels: ['mes-10500', 'mes-10144', 'mes-10510', 'mes-10155', 'mes-10351', 'mes-11517', 'mes-10533', 'mes-10853'] },
-  INSTRUMENT_SERVICE_PROFILE
+  INSTRUMENT_SERVICE_PROFILE,
+  ...FIAT_MODULE_PROFILES
 ]);
 
 export function getDiagnosticProfile(id = 'generic-obd') {
@@ -35,8 +37,9 @@ export function getDiagnosticProfile(id = 'generic-obd') {
 }
 export function selectProfileChannels(profileId, input) {
   const profile = getDiagnosticProfile(profileId), ids = input ?? profile.defaultChannels;
+  assert(profile.available!==false,profile.unavailableReason||'This controller is not yet available.');
   assert(Array.isArray(ids) && ids.length >= 1 && ids.length <= 32 && new Set(ids).size === ids.length, 'Select between 1 and 32 distinct parameters.');
-  assert(ids.every(id => profile.channels.some(channel => channel.key === id)), 'A selected parameter is not in this profile.');
+  assert(ids.every(id => profile.channels.some(channel => channel.key === id&&channel.available!==false)), 'A selected parameter is not available in this profile.');
   return profile.channels.filter(channel => ids.includes(channel.key));
 }
 

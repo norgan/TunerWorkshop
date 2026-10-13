@@ -1,8 +1,8 @@
 # Fiat 500X diagnostic coverage
 
-This document tracks progress towards MultiECUScan-style diagnostics for the **Fiat 500X (334), 1.4 MultiAir, Marelli IAW 8GMK**. It describes Tune Workshop **0.10.0**, reviewed on **13 October 2026**. Source implementation, packaged-release checks and physical vehicle acceptance are separate milestones.
+This document tracks progress towards MultiECUScan-style diagnostics for the **Fiat 500X (334), 1.4 MultiAir, Marelli IAW 8GMK**. It describes Tuner Workshop **0.11.0**, reviewed on **13 October 2026**. Source implementation, packaged-release checks and physical vehicle acceptance are separate milestones.
 
-The **105 engine parameters** belong to one engine profile. They are not all-car diagnostic coverage, and the app does not yet replace MultiECUScan.
+Version 0.11.0 adds **23 usable controller/variant profiles**, **581 readable parameter definitions** and **82 actuator workflows** beyond the existing engine and service-reminder profiles. The selector includes all 26 reference controller/variant entries plus Standard OBD. These include alternative engines and optional equipment, not 26 modules confirmed fitted to one car. The app does not yet replace every MultiECUScan function.
 
 ## Current source coverage
 
@@ -18,7 +18,11 @@ The **105 engine parameters** belong to one engine profile. They are not all-car
 | Engine actuator tests | 21 defined test workflows, including cooling fans, relays, valves, heaters, injectors and ignition coils | Fixed requests and timing, fresh stopped-engine/stationary checks, and explicit return of ECU control. Acknowledgement does not establish the physical component response. |
 | Engine adjustments | Nine workflows, including oil-change adaptation resets and throttle learning | Four catalogue entries remain unavailable: alternator replacement, clutch learning, neutral/first-gear learning and performance-limit deactivation. Physical acceptance is pending. |
 | Dashboard service reminder | Separate service profile with 11 readings and an explicit reminder reset | Strict cluster identity, fresh motion checks, one reset request and counter readback. Lost/mismatched responses remain an unknown outcome; the write is not automatically repeated. Physical acceptance is pending. |
-| Other modules and PROXI | Not implemented | The service profile does not establish general instrument-panel, body, gearbox, ABS or airbag coverage. |
+| Other module sensors | 23 additional profiles with 581 readable definitions | Covers body, instrument, gearbox, ABS, airbag, steering, parking, climate and other optional controllers. Each uses its own identity, address, network and decoder. Physical acceptance is pending. |
+| Other module faults and identity | Module-specific fault reading/clearing, identification and supported snapshots | Definitions include 2,580 fault descriptions across the reference module families. Fixed-offset snapshots are explicitly partial; unknown codes retain their module attribution. Clear requires fresh identity and conditions. |
+| Other module actuator tests | 82 executable workflows; all 106 recovered non-engine actuator entries shown | Body 28, instrument 20, climate 19 across two variants, comfort 3, ABS indicators 5, radar 3, blind-spot lamps 2 and RF-hub alternatives 2. Controller acknowledgements do not establish component operation. |
+| Remaining actuator procedures | 24 entries unavailable with individual reasons | 13 hydraulic brake tests, three parking-brake motor operations, seven DDCT mechanical operations and the cluster self-test need complete setup/completion/return-control evidence. |
+| PROXI and unresolved readings | PROXI unavailable; two radar angles unavailable | 80 PROXI node descriptors are not ordinary sensors. Two four-byte radar angle formats have a signedness conflict in the reference. |
 
 Pressure display can use bar or psi. Changing display units preserves the original measurement and calibration units. An absolute pressure reading stays absolute.
 
@@ -51,14 +55,18 @@ The reference inventory contains **26 module/variant entries** for the 1.4 selec
 | Climate control, manual or automatic | A5 blue | Identification, faults/details, parameters, actuators, adjustments |
 | Left / right blind-spot sensors | A5 blue | Identification, faults/details, parameters, actuators |
 
-The local module linkage distinguishes the A5 body-network transport from the direct/A6 transport. Software must select the correct network and adapter lead; it cannot establish support by changing the engine's address. The [official A5 diagram](https://www.multiecuscan.net/images/OBDAdapter5.png) and [official A6 diagram](https://www.multiecuscan.net/images/OBDAdapter6.png) describe the physical adapters.
+The local module linkage distinguishes the A5 body-network transport from the direct/A6 transport. The app configures BHCAN29 at 125 kbit/s and CCAN29 at 500 kbit/s, with the recovered session fallback rules. Protocol B uses temporary `ATPB0104` parameters rather than changing stored adapter defaults. The [ELM327 datasheet, pages 24 and 76](https://www.elmelectronics.com/wp-content/uploads/2020/05/ELM327DSL.pdf) defines this runtime configuration. The [official A5 diagram](https://www.multiecuscan.net/images/OBDAdapter5.png) and [official A6 diagram](https://www.multiecuscan.net/images/OBDAdapter6.png) describe the physical adapters; software cannot reroute a physical lead.
 
-Some late-2017 and 2018+ 500X vehicles have a security gateway which can block clearing faults and running procedures. Gateway presence on a particular vehicle must be determined, not inferred from successful sensor readings. Tune Workshop has no gateway-unlock implementation. [MES gateway guidance](https://www.multiecuscan.net/SupportedVehiclesList.aspx).
+Use **Diagnostics → What do you want to work on?** to browse a controller's sensor count and actuator catalogue, then **Set up connection** to select its readings and adapter. Browsing another controller never changes an active connection. Disconnect before changing controller or adapter lead. On **Live sensors**, search its complete list and select up to 32 readings at a time. The limit controls polling load, not catalogue availability.
+
+Additional actuator workflows use the recovered fixed requests, pulse durations and return-control commands. They include fresh controller identity checks, raw-zero motion checks where the controller supplies those readings, and explicit user confirmations where it does not. Every result records whether its conditions were measured or user-confirmed. Stop attempts each potentially active output's established release, including both outputs of paired lamps. An unconfirmed release is reported and ends the connection. Writes are never automatically replayed.
+
+Some late-2017 and 2018+ 500X vehicles have a security gateway which can block clearing faults and running procedures. Gateway presence on a particular vehicle must be determined, not inferred from successful sensor readings. Tuner Workshop has no gateway-unlock implementation. [MES gateway guidance](https://www.multiecuscan.net/SupportedVehiclesList.aspx).
 
 ## Next acceptance and coverage priorities
 
 1. **Verify the engine and service workflows on the vehicle.** Establish live identity and read-only readings first, then compare faults and snapshots. Keep generic OBD faults distinguishable from manufacturer faults. Record each explicit service operation's acknowledgement and resulting state separately.
-2. **Add module discovery and read access.** Start with the body computer and instrument panel, then address the applicable gearbox, ABS and airbag. Show which adapter is needed before connecting and explain unsupported modules without attempting guessed commands.
+2. **Accept each added controller on the vehicle.** Compare its identity, selected readings, fault report and snapshot against the reference. Automatic fitted-module discovery remains separate from selecting one of the implemented profiles.
 3. **Complete remaining service operations individually.** Each needs explicit inputs, preconditions, progress, a definite result and interrupted-operation handling. The four unavailable engine adjustments require further protocol and workflow evidence.
 4. **Accept actuator operations individually.** Verify start, stop, timeout and loss-of-connection behavior as well as the normal response. Static operation names and synthetic tests alone do not establish a physical result.
 5. **Implement PROXI as its own workflow.** Read configuration and participating modules, preserve the original configuration, validate changes, and handle partial completion. A generic write button is not PROXI support.
@@ -75,6 +83,6 @@ Module coverage is separate from application conveniences such as multi-signal g
 
 ## Evidence boundary
 
-Public source pointers: the `fiat-8gmk`, `fiat-diagnostics`, `obd-diagnostics`, `instrument-service`, `service-tools`, `sensor-session`, `can-diagnostics` and `diagnostic-catalog` modules, the diagnostics/live UI and their tests. The diagnostic catalogue validates metadata and session attribution; it does not enable commands.
+Public source pointers: the `fiat-8gmk`, `fiat-modules`, `module-transport`, `module-diagnostics`, `module-service`, `module-session-actions`, `fiat-diagnostics`, `obd-diagnostics`, `instrument-service`, `service-tools`, `sensor-session`, `can-diagnostics` and `diagnostic-catalog` modules, the diagnostics/live UI and their tests. The diagnostic catalogue validates metadata and session attribution; it does not itself enable commands.
 
-Private static research was used to check module linkage and the engine catalogue. The installed reference was MES 4.7R3; the official coverage inventory was MES 5.4. Older static definitions cannot establish every newer module or function. Original program/database files, decompilations, customer logs, vehicle files and account information are excluded from the public repository. ECU calibration reading, checksum correction and flashing remain a separate compatibility effort.
+Private static research was used to check all 26 module bindings, sensor formats, identification/fault layouts and actuator sequences. The installed reference was MES 4.7R3; the official coverage inventory was MES 5.4. Older static definitions cannot establish every newer module or function. Original program/database files, decompilations, customer logs, vehicle files and account information are excluded from the public repository. ECU calibration reading, checksum correction and flashing remain a separate compatibility effort.

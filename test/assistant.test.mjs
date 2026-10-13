@@ -227,7 +227,7 @@ test('first sign-in binds loopback callback, state, nonce, PKCE and retained iss
   const url = await h.begin();
   assert.equal(url.origin, AUTH); assert.equal(url.pathname, '/api/accounts/authorize');
   assert.equal(url.searchParams.get('client_id'), 'dynamic_agent_client');
-  assert.equal(url.searchParams.get('agent_name_hint'), 'Tune Workshop');
+  assert.equal(url.searchParams.get('agent_name_hint'), 'Tuner Workshop');
   assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
   assert.equal(url.searchParams.get('resource'), API);
   assert.equal(new URL(url.searchParams.get('redirect_uri')).hostname, '127.0.0.1');

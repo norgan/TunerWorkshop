@@ -14,7 +14,7 @@ export function installServiceLifecycle({ window, contents, ipcMain, origin }) {
     && event?.sender === contents && event.senderFrame === contents.mainFrame
     && isLocalPage(contents.getURL(), origin);
   ipcMain.handle(CHANNEL, async (event, value, ...extra) => {
-    if (!trusted(event)) throw new Error('Service protection is only available in the Tune Workshop window.');
+    if (!trusted(event)) throw new Error('Service protection is only available in the Tuner Workshop window.');
     if (typeof value !== 'boolean' || extra.length) throw new Error('Service activity must be a boolean.');
     active = value;
     return { active };

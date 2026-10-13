@@ -1,17 +1,21 @@
-# Tune Workshop
+# Tuner Workshop
 
-Tune Workshop 0.10.0 is a Windows desktop calibration editor, Fiat engine diagnostics and service workspace, sensor monitor and ChatGPT account assistant for the Fiat 500X project. The editor supports explicit map definitions, table and graph views, direct byte editing, comparison, reversible edits and saved projects. It now automatically reads saved map definitions from the observed WinOLS schema 597 layout and groups source-labelled boost, ignition and fuel controls. Numeric values in the supplied MiTo OLS remain undecoded; its catalogue is inspectable but cannot yet supply editable tuning tables. It starts with clearly labelled synthetic example maps. All imported files remain byte-editable, including the supplied Dimsport GEN_FILE container. Editing container bytes does not establish ECU map addresses, checksum correctness or a valid flash procedure.
+Tuner Workshop 0.11.0 is a Windows desktop calibration editor, Fiat diagnostics and service workspace, sensor monitor and ChatGPT account assistant for the Fiat 500X project. The editor supports explicit map definitions, table and graph views, direct byte editing, comparison, reversible edits and saved projects. It now automatically reads saved map definitions from the observed WinOLS schema 597 layout and groups source-labelled boost, ignition and fuel controls. Numeric values in the supplied MiTo OLS remain undecoded; its catalogue is inspectable but cannot yet supply editable tuning tables. It starts with clearly labelled synthetic example maps. All imported files remain byte-editable, including the supplied Dimsport GEN_FILE container. Editing container bytes does not establish ECU map addresses, checksum correctness or a valid flash procedure.
 
 The requested destination is an approachable tuning application with the full range of MultiECUScan diagnostic functions. The capability plan records that scope without presenting planned controls as working vehicle functions.
+
+**0.11.0 expands the Fiat 500X diagnostics beyond the engine:** 23 additional controller/variant profiles, 581 readable sensor/status definitions and 82 additional actuator test workflows. The full selector includes the model's 26 reference entries, with PROXI explicitly unavailable, plus Standard OBD. Choose a controller in **Diagnostics**, review its direct/A5/A6 connection, then use **Set up connection** to choose live readings. Sensor lists are searchable; up to 32 can be polled per session. Actuator tests include conditions, progress, cancellation and explicit return of control. Faults and identities remain attributed to the connected controller. These counts include optional equipment and alternative engines/gearboxes; physical acceptance on the car remains pending. The [coverage record](docs/diagnostics-coverage.md) lists remaining gaps, including 24 unresolved mechanical/cluster actuator procedures and two radar angles.
 
 ## Windows executable
 
 The Windows build produces two x64 executables in `dist`:
 
-- `Tune-Workshop-0.10.0-Windows-x64.exe`: portable executable. Run it directly; installation is unnecessary.
-- `Tune-Workshop-0.10.0-Setup-x64.exe`: per-user installer with Start menu and optional desktop shortcut. It does not require an administrator install and does not run the app automatically after setup.
+- `Tuner-Workshop-0.11.0-Windows-x64.exe`: portable executable. Run it directly; installation is unnecessary.
+- `Tuner-Workshop-0.11.0-Setup-x64.exe`: per-user installer with Start menu and optional desktop shortcut. It does not require an administrator install and does not run the app automatically after setup.
 
 Build both with `npm run build:win`. Generated executables are not stored in Git. Both include Electron, Chromium, Node.js and the USB serial library. No separate Node installation or manually started server is needed. The app owns a private loopback service on an available port, so it can coexist with the earlier browser preview. Closing the desktop window stops sensor polling and its local service. Unsaved project/recording changes trigger a close confirmation. Cancelling a Windows Save dialog keeps the unsaved state; only a completed save clears it, provided no further changes or samples arrived during the save.
+
+The existing profile folder and saved-project formats are retained across the rename, so settings, account sign-in and older projects continue to work.
 
 Desktop account credentials are encrypted for the current Windows user and stored under `%APPDATA%\Tune Workshop\account`. Browser-preview credentials, if present, are not copied into the desktop app. The application opens official ChatGPT sign-in links in your default browser. Project files are opened and exported using Windows file dialogs; originals are never overwritten automatically.
 
@@ -23,13 +27,13 @@ Use Node.js 20 or newer and a current browser. Run `npm ci` once after cloning t
 
 For source development, use `npm run desktop` to open the desktop app, or `npm run build:win` to rebuild both Windows executables. Electron's runtime setup must be enabled during dependency installation; if npm skips package scripts, run `node node_modules/electron/install.js` explicitly. The SerialPort package includes a Windows x64 Node-API binary; the packaged-app self-test verifies it can load under Electron.
 
-For the optional browser preview, run `Start-Tune-Workshop.ps1` from this directory. It starts the local server and opens the application. Alternatively, run:
+For the optional browser preview, run `Start-Tuner-Workshop.ps1` from this directory. It starts the local server and opens the application. Alternatively, run:
 
 ```powershell
 npm start
 ```
 
-Then open [Tune Workshop](http://localhost:8765/). The server binds only to `127.0.0.1`. When running in a terminal, stop it with Ctrl+C. The PowerShell launcher starts a hidden Node process; closing the browser does not stop that process.
+Then open [Tuner Workshop](http://localhost:8765/). The server binds only to `127.0.0.1`. When running in a terminal, stop it with Ctrl+C. The PowerShell launcher starts a hidden Node process; closing the browser does not stop that process.
 
 ## Editing workflow
 
@@ -152,7 +156,7 @@ The historical engine target is IAW 8GMK / `MM8GMKHW670` / `V862MH97`. The obser
 
 Diagnostic access does not establish flash access. The engine and service-interval diagnostic profiles are implemented; flash transport, programming security access and other vehicle module profiles remain unimplemented.
 
-Product references: [EVC WinOLS](https://www.evc.de/en/product/ols/software/), [MultiECUScan functions](https://www.multiecuscan.net/Default.aspx) and [MultiECUScan vehicle support](https://www.multiecuscan.net/VehicleSupportCheck.aspx). They establish reference-product scope, not implementation coverage in Tune Workshop.
+Product references: [EVC WinOLS](https://www.evc.de/en/product/ols/software/), [MultiECUScan functions](https://www.multiecuscan.net/Default.aspx) and [MultiECUScan vehicle support](https://www.multiecuscan.net/VehicleSupportCheck.aspx). They establish reference-product scope, not implementation coverage in Tuner Workshop.
 
 ## Settings (0.5.0)
 

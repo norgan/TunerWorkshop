@@ -46,13 +46,13 @@ function renderParameterChoices(){
   const profile=currentProfile(),selection=selectedKeys(),query=$('#sensor-search').value.trim().toLowerCase();
   const focusedKey=$('#sensor-selection-list').contains(document.activeElement)?document.activeElement.value:null;
   $('#sensor-selected-count').textContent=`${selection.size} of ${profile.channels.length} selected`;
-  $('#profile-description').textContent=profile.id==='generic-obd'?'Standard OBD measurements. Available readings depend on what the ECU reports.':profile.id==='fiat-service'?'Dashboard service counters and reminder reset. Use the direct OBD connection; turn the ignition on with the engine stopped.':`${profile.channels.length} Fiat IAW 8GMK parameter definitions. Faults and service tools are on the Diagnostics page. Live validation on this ECU is pending.`;
+  $('#profile-description').textContent=profile.id==='generic-obd'?'Standard OBD measurements. Available readings depend on what the ECU reports.':profile.id==='fiat-service'?'Dashboard service counters and reminder reset. Use the direct OBD connection; turn the ignition on with the engine stopped.':profile.available===false?profile.unavailableReason:`${profile.channels.length} parameter definitions. ${profile.connection?.adapterLabel||'Direct OBD connection'}. Ignition on. Faults and actuator tests are on the Diagnostics page. Live validation on this controller is pending.`;
   $('#sensor-selection-list').replaceChildren();
   const matches=profile.channels.filter(channel=>`${channel.label} ${channel.unit}`.toLowerCase().includes(query));
   for(const channel of matches){
     const label=document.createElement('label');label.className='parameter-choice';
-    const input=document.createElement('input');input.type='checkbox';input.value=channel.key;input.checked=selection.has(channel.key);input.disabled=selectionLocked();
-    const description=document.createElement('span'),name=document.createElement('strong'),detail=document.createElement('small');name.textContent=channel.label;detail.textContent=channel.valueType==='text'?'Status':channel.unit||'Numeric reading';description.append(name,detail);label.append(input,description);$('#sensor-selection-list').append(label);
+    const input=document.createElement('input');input.type='checkbox';input.value=channel.key;input.checked=selection.has(channel.key);input.disabled=selectionLocked()||channel.available===false;
+    const description=document.createElement('span'),name=document.createElement('strong'),detail=document.createElement('small');name.textContent=channel.label;detail.textContent=channel.available===false?channel.unavailableReason||'Not yet available':channel.valueType==='text'?'Status':channel.unit||'Numeric reading';description.append(name,detail);label.append(input,description);$('#sensor-selection-list').append(label);
   }
   if(!matches.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No parameters match this search.';$('#sensor-selection-list').append(empty);}
   if(focusedKey)[...$('#sensor-selection-list').querySelectorAll('input')].find(input=>input.value===focusedKey)?.focus({preventScroll:true});
@@ -81,7 +81,7 @@ function renderSensors(){
   const active=serverOnline&&snapshot.status==='streaming',connecting=snapshot.status==='connecting';
   const type=$('#adapter-transport').value,wifi=type==='wifi',ble=type==='ble',bluetooth=type==='bluetooth',busy=connecting||active||serialOperation;
   const locked=selectionLocked();$('#diagnostic-profile').disabled=locked;
-  for(const input of document.querySelectorAll('#sensor-selection-list input'))input.disabled=locked;
+  for(const input of document.querySelectorAll('#sensor-selection-list input'))input.disabled=locked||currentProfile().channels.find(c=>c.key===input.value)?.available===false;
   for(const button of document.querySelectorAll('[data-sensor-preset]'))button.disabled=locked;
   $('#sensor-selection-note').textContent=locked?'Disconnect before changing the diagnostic profile or selected parameters.':`Choose 1–32 parameters. Only selected parameters will be requested.${sensors.length>12?' More parameters reduce the refresh rate for each reading.':''}`;
   $('#usb-port-field').hidden=wifi||ble;$('#usb-baud-field').hidden=wifi||ble;$('#refresh-ports').hidden=wifi||ble;
@@ -98,7 +98,7 @@ function renderSensors(){
   $('#connection-status-detail').textContent=snapshot.status==='error'?(snapshot.error||'The connection stopped before readings were available. Copy the connection details below to help diagnose it.'):'';
   $('#connection-troubleshooting').hidden=snapshot.status!=='error'||!snapshot.error?.includes('ATZ');
   $('#connection-troubleshooting').textContent='The adapter did not answer its reset command, before ECU communication began. Check adapter power and the baud rate, close other OBD apps, and confirm the interface is ELM327-compatible.';
-  $('#connect-sensors').disabled=!serverOnline||busy||!sensors.length||sensors.length>32||(ble?!navigator.bluetooth?.requestDevice:wifi?!$('#wifi-host').value.trim():!serialAvailable||!$('#serial-port').value||portsLoading);
+  $('#connect-sensors').disabled=!serverOnline||busy||currentProfile().available===false||!sensors.length||sensors.length>32||(ble?!navigator.bluetooth?.requestDevice:wifi?!$('#wifi-host').value.trim():!serialAvailable||!$('#serial-port').value||portsLoading);
   $('#disconnect-sensors').disabled=!serverOnline||snapshot.status==='disconnected';
   $('#serial-port').disabled=busy||portsLoading;$('#serial-baud').disabled=busy;
   $('#adapter-transport').disabled=busy;$('#wifi-host').disabled=busy;$('#wifi-port').disabled=busy;
@@ -107,7 +107,7 @@ function renderSensors(){
   $('#record-count').textContent=`${recorded.length.toLocaleString()} samples${recording?' · Recording':''}`;
   $('#sensor-strip').hidden=selectedProfileId!=='generic-obd'||!getSettings().showSensorStrip||(!active&&!connecting);
   const transport=({wifi:'Wi-Fi',bluetooth:'Bluetooth',ble:'BLE'})[snapshot.transport]||'USB';
-  $('#vehicle-connection').textContent=active?`${transport} ELM · ${selectedProfileId==='fiat-service'?'Service interval':selectedProfileId==='fiat-8gmk'?'Fiat engine':'Standard OBD'}`:connecting?`Connecting to ${transport} ELM…`:'No vehicle connected';
+  $('#vehicle-connection').textContent=active?`${transport} ELM · ${currentProfile().label}`:connecting?`Connecting to ${transport} ELM…`:'No vehicle connected';
   let anyStale=false;
   for(const strip of document.querySelectorAll('[data-strip]'))strip.textContent='—';
   for(const sensor of sensors){
@@ -376,7 +376,7 @@ $('#refresh-ports').addEventListener('click',safely(refreshPorts));$('#serial-po
 $('#adapter-transport').addEventListener('change',updateConnectionType);$('#wifi-host').addEventListener('input',renderSensors);$('#ble-profile').addEventListener('change',renderSensors);
 $('#connect-sensors').addEventListener('click',safely(connect));$('#disconnect-sensors').addEventListener('click',safely(disconnect));$('#strip-disconnect').addEventListener('click',safely(disconnect));
 $('#copy-connection-details').addEventListener('click',async()=>{
-  const details=['Tune Workshop connection details',`Status: ${snapshot.status}`,`Connection: ${snapshot.transport||$('#adapter-transport').value}`,`Port: ${snapshot.path||'not opened'}`,`Baud rate: ${snapshot.baudRate||'not applicable'}`,`Wi-Fi: ${snapshot.host?`${snapshot.host}:${snapshot.port}`:'not applicable'}`,`Reason: ${snapshot.error||$('#live-error').textContent||'No failure reported'}`].join('\n');
+  const details=['Tuner Workshop connection details',`Status: ${snapshot.status}`,`Connection: ${snapshot.transport||$('#adapter-transport').value}`,`Port: ${snapshot.path||'not opened'}`,`Baud rate: ${snapshot.baudRate||'not applicable'}`,`Wi-Fi: ${snapshot.host?`${snapshot.host}:${snapshot.port}`:'not applicable'}`,`Reason: ${snapshot.error||$('#live-error').textContent||'No failure reported'}`].join('\n');
   try{await navigator.clipboard.writeText(details);$('#connection-copy-status').textContent='Connection details copied.';}
   catch{$('#connection-copy-status').textContent=details;}
 });
@@ -430,7 +430,7 @@ diagnosticsWorkspace=createDiagnosticsWorkspace({
   getSnapshot:()=>({...snapshot,profileId:selectedProfileId,...(!serverOnline?{status:'unavailable'}:{})}),
   run:async options=>{
     const session=bleSession;
-    if(!session)return api('/api/diagnostics/run',options,150000);
+    if(!session)return api('/api/diagnostics/run',options,600000);
     if(options.action!=='run-service')return session.diagnose(options);
     if(!window.workshopDesktop?.setServiceActive)throw new Error('Use the Windows app for Bluetooth service actions so it can keep the connection open until the action stops.');
     bleServicePending=true;

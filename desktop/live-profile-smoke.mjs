@@ -23,7 +23,7 @@ export async function runLiveProfileSmoke(contents, session) {
       $('#diagnostic-profile').value='generic-obd';$('#diagnostic-profile').dispatchEvent(new Event('change'));
       $('[data-sensor-preset="default"]').click();
       assert($('#sensor-cards').children.length===6,'Generic six-sensor default changed');
-      assert($('#diagnostic-profile').options.length===3,'Diagnostic profile options missing');
+      assert($('#diagnostic-profile').options.length===27,'Diagnostic profile options missing');
       $('#diagnostic-profile').value='fiat-8gmk';$('#diagnostic-profile').dispatchEvent(new Event('change'));
       assert(document.querySelectorAll('#sensor-selection-list input').length===105,'Full Fiat catalog is not selectable');
       assert($('#sensor-cards').children.length===8,'Fiat suggested selection not applied');

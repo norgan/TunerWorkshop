@@ -20,7 +20,7 @@ async function fixture(t, overrides = {}) {
   session.connect = async options => { calls.push(['connect', options]); connected = true; };
   session.disconnect = async () => { calls.push(['disconnect']); connected = false; };
   const assetRoot = await mkdtemp(join(tmpdir(), 'tune-workshop-server-test-'));
-  await writeFile(join(assetRoot, 'index.html'), '<title>Tune Workshop test</title>');
+  await writeFile(join(assetRoot, 'index.html'), '<title>Tuner Workshop test</title>');
   await writeFile(join(assetRoot, 'live.mjs'), 'export const fixture = true;');
   await writeFile(join(assetRoot, 'formats.mjs'), 'export const fixture = true;');
   await writeFile(join(assetRoot, 'dimsport-ui.mjs'), 'export const fixture = true;');
