@@ -10,6 +10,7 @@ import { createAssistant, createAssistantStorage } from '../assistant.mjs';
 import { allowExternalLink, isLocalPage } from './policy.mjs';
 import {installBluetoothPicker} from './bluetooth.mjs';
 import {createSettingsStore,installSettings} from './settings.mjs';
+import {installServiceLifecycle} from './service-lifecycle.mjs';
 
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const smokeArg=process.argv.find(value=>value.startsWith('--smoke-test='));
@@ -36,7 +37,7 @@ function installMenu(){
     {label:'File',submenu:[{label:'Exit',accelerator:'Alt+F4',click:()=>window?.close()}]},
     {label:'Edit',submenu:[{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'},{type:'separator'},{label:'Settings…',accelerator:'Ctrl+,',click:()=>window?.webContents.send('workshop:open-settings')}]},
     {label:'View',submenu:[{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{type:'separator'},{role:'togglefullscreen'}]},
-    {label:'Help',submenu:[{label:'About Tune Workshop',click:()=>dialog.showMessageBox(window,{type:'info',title:'Tune Workshop',message:`Tune Workshop ${app.getVersion()}`,detail:'Windows desktop calibration editor, sensor monitor and tuning assistant. File editing is enabled for all formats. ECU writes and checksum correction remain unimplemented.'})}]}
+    {label:'Help',submenu:[{label:'About Tune Workshop',click:()=>dialog.showMessageBox(window,{type:'info',title:'Tune Workshop',message:`Tune Workshop ${app.getVersion()}`,detail:'Windows calibration editor, Fiat engine diagnostics, service procedures, sensor monitor and tuning assistant. Vehicle validation of the new diagnostic procedures is pending. Calibration flashing and checksum correction remain unimplemented.'})}]}
   ]));
 }
 async function main(){
@@ -53,6 +54,7 @@ async function main(){
   ses.setPermissionCheckHandler((_contents,permission)=>['clipboard-sanitized-write','bluetooth'].includes(permission)&&_contents===contents&&isLocalPage(_contents.getURL(),origin));
   installBluetoothPicker({contents,session:ses,ipcMain,origin});
   installSettings({contents,ipcMain,origin,store:createSettingsStore({filePath:join(app.getPath('userData'),'settings.json')})});
+  const serviceLifecycle=installServiceLifecycle({window,contents,ipcMain,origin});
   ses.webRequest.onBeforeRequest((details,callback)=>callback({cancel:!(details.url.startsWith(origin+'/')||details.url.startsWith('blob:'+origin+'/')||details.url.startsWith('devtools:')&&!app.isPackaged)}));
   ses.webRequest.onBeforeSendHeaders((details,callback)=>{
     if(details.webContentsId===contents.id&&details.url.startsWith(origin+'/'))details.requestHeaders['X-Tune-Desktop']=token;
@@ -62,6 +64,7 @@ async function main(){
   contents.on('will-navigate',(event,url)=>{if(!isLocalPage(url,origin)){event.preventDefault();openExternal(url);}});
   contents.on('will-attach-webview',event=>event.preventDefault());
   contents.on('will-prevent-unload',event=>{
+    if(serviceLifecycle.isActive()){contents.send('workshop:service-close-blocked');return;}
     if(smokeOutput)return;
     const choice=dialog.showMessageBoxSync(window,{type:'question',buttons:['Keep working','Close without saving'],defaultId:0,cancelId:0,message:'You have unsaved work.',detail:'Save your project or recording before closing. Closing disconnects the sensor session.'});
     if(choice===1)event.preventDefault();
@@ -75,7 +78,7 @@ async function main(){
       // Test cancellation and a completed save using only the synthetic demo.
       if(smokeDownloads++===0){event.preventDefault();notify('cancelled');return;}
       const testName=item.getFilename();
-      item.setSavePath(join(app.getPath('userData'),testName.endsWith('.ECU-IMAGE.UNVERIFIED-DRAFT.bin')?'synthetic-payload.bin':testName.endsWith('.inspection.json')?'synthetic-inspection.json':testName.startsWith('sensor-recording-')?'synthetic-recording.json':'synthetic-save.tuneworkshop.json'));return;
+      item.setSavePath(join(app.getPath('userData'),testName.endsWith('.ECU-IMAGE.UNVERIFIED-DRAFT.bin')?'synthetic-payload.bin':testName.endsWith('.inspection.json')?'synthetic-inspection.json':testName.startsWith('sensor-recording-')?'synthetic-recording.json':testName.startsWith('diagnostics-')?'synthetic-diagnostics.json':'synthetic-save.tuneworkshop.json'));return;
     }
     item.setSaveDialogOptions({title:'Save Tune Workshop file',defaultPath:join(app.getPath('downloads'),item.getFilename())});
   });
@@ -189,6 +192,21 @@ async function runSmoke(contents,token){
   const {runPressureSmoke}=await import('./pressure-smoke.mjs');
   Object.assign(checks,await runPressureSmoke(contents,sensors));
   await writeFile(smokeOutput.replace(/\.json$/i,'')+'-pressure.png',(await contents.capturePage()).toPNG());
+  if(renderErrors.length)throw new Error('Renderer reported an error: '+renderErrors.join('; '));
+  const {runDiagnosticsSmoke}=await import('./diagnostics-smoke.mjs');
+  Object.assign(checks,await runDiagnosticsSmoke(contents,sensors));
+  await contents.executeJavaScript('window.workshopDesktop.setServiceActive(true)');
+  window.close();
+  if(window.isDestroyed())throw new Error('Closing the app abandoned the renderer service guard.');
+  await contents.executeJavaScript(`(async()=>{
+    const end=Date.now()+5000;
+    while(!document.querySelector('#diagnostic-message').textContent.includes('Bluetooth service action')&&Date.now()<end)await new Promise(resolve=>setTimeout(resolve,20));
+    if(!document.querySelector('#diagnostic-message').textContent.includes('Bluetooth service action'))throw new Error('The service close guard did not explain how to stop.');
+    await window.workshopDesktop.setServiceActive(false);
+  })()`);
+  checks.bluetoothServiceCloseGuard=true;
+  await contents.executeJavaScript('window.scrollTo(0,0);new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  await writeFile(smokeOutput.replace(/\.json$/i,'')+'-diagnostics.png',(await contents.capturePage()).toPNG());
   if(renderErrors.length)throw new Error('Renderer reported an error: '+renderErrors.join('; '));
   const report={ok:true,version:app.getVersion(),packaged:app.isPackaged,executable:process.execPath,runtime:{electron:process.versions.electron,node:process.versions.node,chrome:process.versions.chrome},renderer:checks,usbNativeDriver:native.available,privateApi:true,accountStoreEncrypted:process.platform==='win32',vehicleConnected:false,accountConnected:false,renderErrors};
   const prefs=contents.getLastWebPreferences();report.isolation={sandbox:prefs.sandbox,contextIsolation:prefs.contextIsolation,nodeIntegration:prefs.nodeIntegration};

@@ -1,6 +1,6 @@
 # Tune Workshop
 
-Tune Workshop 0.9.2 is a Windows desktop calibration editor, saved-diagnostics viewer, generic OBD and Fiat IAW 8GMK sensor monitor and ChatGPT account assistant for the Fiat 500X project. The editor supports explicit map definitions, table and graph views, direct byte editing, comparison, reversible edits and saved projects. It now automatically reads saved map definitions from the observed WinOLS schema 597 layout and groups source-labelled boost, ignition and fuel controls. Numeric values in the supplied MiTo OLS remain undecoded; its catalogue is inspectable but cannot yet supply editable tuning tables. It starts with clearly labelled synthetic example maps. All imported files remain byte-editable, including the supplied Dimsport GEN_FILE container. Editing container bytes does not establish ECU map addresses, checksum correctness or a valid flash procedure.
+Tune Workshop 0.10.0 is a Windows desktop calibration editor, Fiat engine diagnostics and service workspace, sensor monitor and ChatGPT account assistant for the Fiat 500X project. The editor supports explicit map definitions, table and graph views, direct byte editing, comparison, reversible edits and saved projects. It now automatically reads saved map definitions from the observed WinOLS schema 597 layout and groups source-labelled boost, ignition and fuel controls. Numeric values in the supplied MiTo OLS remain undecoded; its catalogue is inspectable but cannot yet supply editable tuning tables. It starts with clearly labelled synthetic example maps. All imported files remain byte-editable, including the supplied Dimsport GEN_FILE container. Editing container bytes does not establish ECU map addresses, checksum correctness or a valid flash procedure.
 
 The requested destination is an approachable tuning application with the full range of MultiECUScan diagnostic functions. The capability plan records that scope without presenting planned controls as working vehicle functions.
 
@@ -8,8 +8,8 @@ The requested destination is an approachable tuning application with the full ra
 
 The Windows build produces two x64 executables in `dist`:
 
-- `Tune-Workshop-0.9.2-Windows-x64.exe`: portable executable. Run it directly; installation is unnecessary.
-- `Tune-Workshop-0.9.2-Setup-x64.exe`: per-user installer with Start menu and optional desktop shortcut. It does not require an administrator install and does not run the app automatically after setup.
+- `Tune-Workshop-0.10.0-Windows-x64.exe`: portable executable. Run it directly; installation is unnecessary.
+- `Tune-Workshop-0.10.0-Setup-x64.exe`: per-user installer with Start menu and optional desktop shortcut. It does not require an administrator install and does not run the app automatically after setup.
 
 Build both with `npm run build:win`. Generated executables are not stored in Git. Both include Electron, Chromium, Node.js and the USB serial library. No separate Node installation or manually started server is needed. The app owns a private loopback service on an available port, so it can coexist with the earlier browser preview. Closing the desktop window stops sensor polling and its local service. Unsaved project/recording changes trigger a close confirmation. Cancelling a Windows Save dialog keeps the unsaved state; only a completed save clears it, provided no further changes or samples arrived during the save.
 
@@ -103,9 +103,23 @@ BLE uses Electron's Web Bluetooth support. Automatic service detection checks FF
 
 All four transports share the same diagnostic session engine. **Standard OBD sensors** uses Mode 01 supported-PID discovery for engine speed, coolant temperature, manifold absolute pressure, intake-air temperature, throttle position and control-module voltage. **Fiat 500X · IAW 8GMK · 105 parameters** uses the recovered manufacturer profile described below. Responses stay attributed to one ECU; malformed frames, timeouts and disconnections stop the session. BLE notifications may arrive in fragments, and GATT writes are serialized even when a reply arrives before its write acknowledgement. The user supplied a screenshot showing successful generic USB readings on COM4 at 38400 baud. Manufacturer-specific communication and physical BLE/Wi-Fi compatibility remain unverified.
 
-Readings continue alongside offline editing. Generic measurements appear in the compact strip; the Fiat profile uses its named cards and charts. Numeric readings can be charted; categorical states retain their labels. Freshness follows the channel and polling group (5 seconds for generic defaults, 15–30 seconds for manufacturer polling). Recordings hold at most 20,000 samples and export selected readings, profile, ECU source and session attribution to JSON. Unsaved recordings trigger a close prompt. Disconnect stops polling. BLE belongs to the app window and disconnects when it closes. In browser-preview mode, USB/Classic/Wi-Fi belong to the separate server and require Disconnect or stopping the server.
+Readings continue alongside offline editing. Generic measurements appear in the compact strip; the Fiat profile uses its named cards and charts. Numeric readings can be charted; categorical states retain their labels. Freshness follows the channel and polling group (5 seconds for generic defaults, 15–30 seconds for manufacturer polling). Recordings hold at most 20,000 samples and export selected readings, profile, ECU source and session attribution to JSON. Unsaved recordings trigger a close prompt. Disconnect stops polling. BLE belongs to the app window and disconnects when it closes. The Windows app prevents closing during an active BLE service action until it has finished or stopped; BLE service actions require that desktop guard and are unavailable in browser preview. In browser-preview mode, USB/Classic/Wi-Fi belong to the separate server and require Disconnect or stopping the server.
 
-ECU flashing, live calibration writes, checksum correction, fault clearing, actuator tests and service routines remain unimplemented. The manufacturer sensor profile is implemented with static and simulated-response validation; real-vehicle acceptance is still required.
+ECU flashing, live calibration writes and checksum correction remain unimplemented. The manufacturer sensor and service profiles have static and simulated-response validation; real-vehicle acceptance is still required.
+
+## Diagnostics, service resets and actuator tests (0.10.0)
+
+Open **Diagnostics**, choose the controller in **What do you want to work on?**, then select **Set up connection**. Connect the adapter on Live sensors, and return to Diagnostics. Switching controllers requires disconnecting first; neither choosing a profile nor opening the page sends vehicle commands.
+
+- **Fiat engine:** live fault codes with descriptions/statuses, fault-specific freeze frames, ten identification fields, explicit fault clearing, 21 actuator-test workflows and nine engine adjustments. Engine identity must match the implemented 8GMK profile.
+- **Dashboard service reminder:** a separate instrument-controller profile with 11 selectable readings and a reminder reset. The reset checks controller identity, remaining service coupons and fresh zero engine/road speed, sends one request, then checks the service values after the reference eight-second wait.
+- **Standard OBD diagnostics:** CAN-based stored, pending and permanent faults, readiness, VIN and supported freeze-frame readings. Generic fault clearing is not enabled.
+
+**Engine oil change · reset UniAir adaptations** and **Reset dashboard service reminder** are separate procedures. Complete the corresponding maintenance first. Oil adaptation reset requires ignition off for at least 60 seconds after the app disconnects. The dashboard action retains configured intervals and verifies the coupon/countdown change; a positive response without matching readback remains unverified.
+
+Each modifying action requires a review of its conditions and a fresh engine-off/stationary check. Sensor polling shares the same queue and pauses while an action runs. Actuator cancellation sends its recovered stop/return-control request; cancelling cannot undo a reset already accepted. Lost or mismatched acknowledgements never trigger an automatic repeat, and the result preserves an unknown or partial outcome. The UI retains separate session attribution in exported JSON reports. Identification reads can include VIN; reports stay local until explicitly exported, and are not automatically included in assistant context.
+
+Four engine adjustments remain listed but unavailable: alternator replacement, clutch learning, neutral/first-gear learning and performance-limit deactivation. General instrument, body, ABS, airbag, transmission, PROXI and other module support remain separate implementation work. See [diagnostic coverage](docs/diagnostics-coverage.md) for the module inventory and remaining acceptance checks. This release does not claim full MultiECUScan parity.
 
 Implementation references: [Electron device access](https://www.electronjs.org/docs/latest/tutorial/devices), [Windows Bluetooth profiles](https://learn.microsoft.com/en-us/windows-hardware/drivers/bluetooth/bluetooth-host-radio-support), and [Windows settings links](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings).
 
@@ -126,6 +140,7 @@ Account flow, cryptographic validation and response handling have automated mock
 - `core.mjs`: `CalibrationProject`, `TYPES`, `LIMITS`, `sha256`, `createDemoProject`. Relevant methods include `readMap(id)`, `readOriginalMap(id)`, `readBytes(address, length, { original })`, `editCells(id, cells)`, `editBytes(address, values)`, `restoreBytes(address, length)`, `restoreCells(id, indices)`, `diff(limit)`, `undo()`, `redo()`, `serialize()` and `CalibrationProject.fromJSON(input)`. Byte getters return copies. Project reopening verifies the original hash; raw-byte changes are explicitly marked, while older map-only projects retain their validation rules.
 - `desktop/main.mjs`: isolated desktop window, native menus/download dialogs, per-user encrypted account storage, private-service lifetime and shutdown.
 - `electron-builder.cjs`: explicit package contents and Windows x64 portable/installer targets. Proprietary reference programs, ECU originals, research payloads and credentials are excluded.
+- `sensor-session.mjs`: shared sensor/diagnostic queue, session binding and transport attribution; `fiat-diagnostics.mjs`, `obd-diagnostics.mjs`, `service-tools.mjs` and `instrument-service.mjs` provide bounded decoding and fixed procedures.
 - `mes-log.mjs`: browser-compatible `parseMesLog(text)` and `MES_LOG_LIMITS`. Samples are `{ time: null, value: number|string }`. The result explicitly labels saved historical evidence.
 
 
@@ -135,7 +150,7 @@ Run `npm test` for the automated checks. The automated suite covers editor integ
 
 The historical engine target is IAW 8GMK / `MM8GMKHW670` / `V862MH97`. The observed Dimsport sample is 4,194,655 bytes, starts with `GEN_FILE`, and contains a candidate 4 MiB image at offset 351. Its exact acquisition device/read mode and ECU checksum correctness remain unverified. Firmware samples, private logs and reverse-engineering artifacts are not included in this repository.
 
-Diagnostic access does not establish flash access. The 105-parameter Fiat engine read profile is implemented; flash transport, security access and other Fiat diagnostic operations remain unimplemented.
+Diagnostic access does not establish flash access. The engine and service-interval diagnostic profiles are implemented; flash transport, programming security access and other vehicle module profiles remain unimplemented.
 
 Product references: [EVC WinOLS](https://www.evc.de/en/product/ols/software/), [MultiECUScan functions](https://www.multiecuscan.net/Default.aspx) and [MultiECUScan vehicle support](https://www.multiecuscan.net/VehicleSupportCheck.aspx). They establish reference-product scope, not implementation coverage in Tune Workshop.
 

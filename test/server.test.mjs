@@ -7,6 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorkshopServer, MAX_JSON_BYTES, MAX_EVENT_SUBSCRIBERS } from '../server.mjs';
 import { AssistantError } from '../assistant.mjs';
+import { DiagnosticError } from '../diagnostic-actions.mjs';
+
+const diagnosticAssets = ['diagnostics-ui.mjs', 'diagnostic-actions.mjs', 'obd-diagnostics.mjs', 'fiat-diagnostics.mjs', 'fiat-diagnostics-data.mjs',
+  'service-tools.mjs', 'service-tools-data.mjs', 'instrument-service.mjs', 'fiat-8gmk.mjs', 'fiat-8gmk-data.mjs',
+  'sensor-session.mjs', 'can-diagnostics.mjs', 'elm-protocol.mjs', 'sensor-events.mjs', 'diagnostics.css'];
 
 async function fixture(t, overrides = {}) {
   const calls = [], session = new EventEmitter();
@@ -21,6 +26,7 @@ async function fixture(t, overrides = {}) {
   await writeFile(join(assetRoot, 'dimsport-ui.mjs'), 'export const fixture = true;');
   await writeFile(join(assetRoot, 'calibration-discovery.mjs'), 'export const fixture = true;');
   await writeFile(join(assetRoot, 'live.css'), 'body { color: black; }');
+  await Promise.all(diagnosticAssets.map(name => writeFile(join(assetRoot, name), name.endsWith('.css') ? '.diagnostic-fixture { display: block; }' : 'export const diagnosticFixture = true;')));
   await mkdir(join(assetRoot, '.local'));
   await writeFile(join(assetRoot, '.local', 'credentials.json'), '{"fixture":"private-test-value"}');
   const server = createWorkshopServer({
@@ -192,6 +198,116 @@ test('assistant errors reach the UI with actionable messages and correct status'
   assert.equal(response.status, 503); assert.equal(response.json.error, error.message);
   assert.equal(response.json.code, error.code); assert.deepEqual(response.json.diagnostics, error.diagnostics);
   assert.doesNotMatch(response.text, /Check the device/);
+});
+
+test('diagnostic run and stop require desktop token and same-origin API credentials before dispatch', async t => {
+  const accessToken = 'c'.repeat(64), f = await fixture(t, { accessToken });
+  f.session.diagnose = async action => { f.calls.push(['diagnose', action]); return { kind: 'faults' }; };
+  f.session.stopService = action => { f.calls.push(['stop-service', action]); return { stopping: true }; };
+  for (const [path, body] of [
+    ['/api/diagnostics/run', { action: 'read-faults', sessionId: 'synthetic-session' }],
+    ['/api/diagnostics/stop', { sessionId: 'synthetic-session' }],
+  ]) {
+    for (const options of [
+      {}, { headers: { 'X-Tune-Desktop': 'd'.repeat(64) } },
+      { authorized: false, headers: { 'X-Tune-Desktop': accessToken } },
+      { headers: { 'X-Tune-Desktop': accessToken, 'X-Tune-Workshop': '0' } },
+      { headers: { 'X-Tune-Desktop': accessToken, Origin: 'https://untrusted.example' } },
+      { headers: { 'X-Tune-Desktop': accessToken, Origin: `http://localhost:${f.port}` } },
+      { headers: { 'X-Tune-Desktop': accessToken, Host: 'untrusted.example' } },
+      { headers: { 'X-Tune-Desktop': accessToken, 'Sec-Fetch-Site': 'cross-site' } },
+    ]) assert.equal((await request(f, path, { method: 'POST', body, ...options })).status, 403, path);
+    assert.equal((await request(f, path, { headers: { 'X-Tune-Desktop': accessToken } })).status, 405);
+  }
+  assert.deepEqual(f.calls, []);
+});
+
+test('diagnostic route schemas require session selection and confirmation and reject raw command injection', async t => {
+  const f = await fixture(t);
+  f.session.diagnose = async action => { f.calls.push(['diagnose', action]); return {}; };
+  f.session.stopService = action => { f.calls.push(['stop-service', action]); return {}; };
+  for (const body of [
+    {}, { action: 'read-faults' }, { action: 'read-faults', sessionId: '' }, { action: 'read-faults', sessionId: 'x'.repeat(101) },
+    { action: 'read-faults', sessionId: 1 }, { action: 'send-command', sessionId: 'synthetic-session', command: '14FFFFFF' },
+    { action: 'read-faults', sessionId: 'synthetic-session', request: '2701' },
+    { action: 'read-faults', sessionId: 'synthetic-session', confirmation: 'clear-faults' },
+    { action: 'read-freeze-frame', sessionId: 'synthetic-session', dtcId: '00331300' },
+    { action: 'read-freeze-frame', sessionId: 'synthetic-session', dtcId: '0033;\r14FFFFFF' },
+    { action: 'clear-faults', sessionId: 'synthetic-session' }, { action: 'clear-faults', sessionId: 'synthetic-session', confirmation: true },
+    { action: 'run-service', sessionId: 'synthetic-session', toolId: 'fan-low', confirmation: 'run-service' },
+    { action: 'run-service', sessionId: 'synthetic-session', toolId: 'fan-low', confirmation: 'run-service', acknowledged: false },
+    { action: 'run-service', sessionId: 'synthetic-session', toolId: '2F500103\r', confirmation: 'run-service', acknowledged: true },
+    { action: 'run-service', sessionId: 'synthetic-session', toolId: 'fan-low', confirmation: 'run-service', acknowledged: true, steps: ['2F500103'] },
+  ]) assert.equal((await request(f, '/api/diagnostics/run', { method: 'POST', body })).status, 400, JSON.stringify(body));
+  for (const body of [{}, { sessionId: '' }, { sessionId: null }, { sessionId: 1 }, { sessionId: 'x'.repeat(101) }, { sessionId: 'synthetic-session', command: '2F500100' }, { sessionId: 'synthetic-session', toolId: 'fan-low' }]) {
+    assert.equal((await request(f, '/api/diagnostics/stop', { method: 'POST', body })).status, 400);
+  }
+  for (const path of ['/api/diagnostics/run', '/api/diagnostics/stop']) {
+    for (const raw of ['{', '[]', 'null', '']) assert.equal((await request(f, path, { method: 'POST', raw })).status, 400);
+    assert.equal((await request(f, path, { method: 'POST', body: {}, headers: { 'Content-Type': 'text/plain' } })).status, 415);
+  }
+  assert.deepEqual(f.calls, []);
+});
+
+test('validated diagnostic actions and stop dispatch only to the injected session', async t => {
+  const accessToken = 'e'.repeat(64), f = await fixture(t, { accessToken }), headers = { 'X-Tune-Desktop': accessToken };
+  f.session.diagnose = async action => { f.calls.push(['diagnose', action]); return { kind: 'synthetic-result', action: action.action, sessionId: action.sessionId }; };
+  f.session.stopService = action => { f.calls.push(['stop-service', action]); return { stopping: true }; };
+  const actions = [
+    { action: 'read-faults', sessionId: 'synthetic-session' },
+    { action: 'read-identification', sessionId: 'synthetic-session' },
+    { action: 'read-freeze-frame', sessionId: 'synthetic-session', dtcId: '003313' },
+    { action: 'clear-faults', sessionId: 'synthetic-session', confirmation: 'clear-faults' },
+    { action: 'run-service', sessionId: 'synthetic-session', toolId: 'fan-low', confirmation: 'run-service', acknowledged: true },
+  ];
+  for (const action of actions) {
+    const response = await request(f, '/api/diagnostics/run', { method: 'POST', body: action, headers });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.json, { kind: 'synthetic-result', action: action.action, sessionId: action.sessionId });
+  }
+  const stop = { sessionId: 'synthetic-session' };
+  const response = await request(f, '/api/diagnostics/stop', { method: 'POST', body: stop, headers });
+  assert.equal(response.status, 200); assert.deepEqual(response.json, { stopping: true });
+  assert.deepEqual(f.calls, [...actions.map(action => ['diagnose', action]), ['stop-service', stop]]);
+});
+
+test('diagnostic errors retain actionable codes while unknown exceptions remain private', async t => {
+  const f = await fixture(t), run = { action: 'read-faults', sessionId: 'synthetic-session' };
+  for (const [code, message, status] of [
+    ['confirmation_required', 'Confirm fault clearing before continuing.', 400],
+    ['invalid_request', 'Choose a known procedure for this engine.', 400],
+    ['session_changed', 'The vehicle connection changed. Connect and review the action again.', 409],
+    ['busy', 'A diagnostic action is already running.', 409],
+    ['precondition', 'Stop the engine and keep the vehicle stationary before starting this action.', 409],
+    ['outcome_unknown', 'Fault clearing was not confirmed. Read faults again before retrying.', 409],
+  ]) {
+    f.session.diagnose = async () => { throw new DiagnosticError(message, code); };
+    const response = await request(f, '/api/diagnostics/run', { method: 'POST', body: run });
+    assert.equal(response.status, status); assert.deepEqual(response.json, { error: message, code });
+  }
+  f.session.stopService = () => { throw new DiagnosticError('The vehicle connection changed.', 'session_changed'); };
+  const stopped = await request(f, '/api/diagnostics/stop', { method: 'POST', body: { sessionId: 'old-session' } });
+  assert.equal(stopped.status, 409); assert.deepEqual(stopped.json, { error: 'The vehicle connection changed.', code: 'session_changed' });
+  f.session.diagnose = f.session.stopService = () => { throw new Error('sensitive-test-token private-test-value'); };
+  for (const [path, body] of [['/api/diagnostics/run', run], ['/api/diagnostics/stop', { sessionId: 'synthetic-session' }]]) {
+    const response = await request(f, path, { method: 'POST', body });
+    assert.equal(response.status, 500); assert.doesNotMatch(response.text, /sensitive-test-token|private-test-value|Error:/);
+  }
+  delete f.session.diagnose; delete f.session.stopService;
+  assert.equal((await request(f, '/api/diagnostics/run', { method: 'POST', body: run })).status, 503);
+  assert.equal((await request(f, '/api/diagnostics/stop', { method: 'POST', body: { sessionId: 'synthetic-session' } })).status, 503);
+});
+
+test('diagnostic browser assets and shared protocol dependencies are served by the explicit static allowlist', async t => {
+  const f = await fixture(t);
+  for (const asset of diagnosticAssets) {
+    const response = await request(f, '/' + asset, { authorized: false });
+    assert.equal(response.status, 200, asset);
+    assert.match(response.headers['content-type'], asset.endsWith('.css') ? /^text\/css/ : /^text\/javascript/);
+    assert.match(response.text, /diagnosticFixture|diagnostic-fixture/);
+    assert.match(response.headers['content-security-policy'], /connect-src 'self'/);
+  }
+  assert.deepEqual(f.calls, []);
 });
 
 test('rejects malformed content, oversized declared/chunked bodies and invalid options', async t => {

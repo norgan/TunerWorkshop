@@ -4,11 +4,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { AssistantError } from './assistant.mjs';
 import { selectProfileChannels } from './fiat-8gmk.mjs';
+import { DiagnosticError, validateDiagnosticAction } from './diagnostic-actions.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const MAX_JSON_BYTES = 256 * 1024;
 export const MAX_EVENT_SUBSCRIBERS = 8;
 const files = new Map([
+  ...['diagnostics-ui','diagnostic-actions','obd-diagnostics','fiat-diagnostics','fiat-diagnostics-data','service-tools','service-tools-data','instrument-service'].map(name=>['/'+name+'.mjs',[name+'.mjs','text/javascript']]),
+  ['/diagnostics.css', ['diagnostics.css', 'text/css']],
   ['/winols-project.mjs', ['winols-project.mjs', 'text/javascript']],
   ['/map-identification.mjs', ['map-identification.mjs', 'text/javascript']],
   ['/map-catalogue.mjs', ['map-catalogue.mjs', 'text/javascript']],
@@ -51,6 +54,7 @@ const files = new Map([
 const apiMethods = new Map([
   ['/api/status', 'GET'], ['/api/serial/ports', 'GET'], ['/api/sensors', 'GET'], ['/api/events', 'GET'],
   ['/api/sensors/connect', 'POST'], ['/api/sensors/disconnect', 'POST'],
+  ['/api/diagnostics/run', 'POST'], ['/api/diagnostics/stop', 'POST'],
   ['/api/assistant/status', 'GET'], ['/api/assistant/sign-in', 'POST'],
   ['/api/assistant/disconnect', 'POST'], ['/api/assistant/message', 'POST'],
 ]);
@@ -196,6 +200,16 @@ export function createWorkshopServer({ session, availability, listSerialPorts, a
         case '/api/sensors': json(res, 200, session.snapshot()); break;
         case '/api/sensors/connect': await session.connect(connectOptions(body)); json(res, 200, session.snapshot()); break;
         case '/api/sensors/disconnect': await session.disconnect(); json(res, 200, session.snapshot()); break;
+        case '/api/diagnostics/run': {
+          const action=validateDiagnosticAction(body);
+          if(typeof session.diagnose!=='function')throw new RequestError(503,'Diagnostic tools are unavailable in this session.');
+          json(res,200,await session.diagnose(action));break;
+        }
+        case '/api/diagnostics/stop': {
+          if(Object.keys(body).some(key=>key!=='sessionId')||typeof body.sessionId!=='string'||body.sessionId.length<1||body.sessionId.length>100)throw new RequestError(400,'The service-session selection is invalid.');
+          if(typeof session.stopService!=='function')throw new RequestError(503,'Service tools are unavailable in this session.');
+          json(res,200,await session.stopService(body));break;
+        }
         case '/api/assistant/status': json(res, 200, await assistantStatus()); break;
         case '/api/assistant/sign-in': {
           if (body.accountId !== undefined && (typeof body.accountId !== 'string' || body.accountId.length > 256)) throw new RequestError(400, 'The account selection is invalid.');
@@ -222,6 +236,7 @@ export function createWorkshopServer({ session, availability, listSerialPorts, a
     } catch (error) {
       if (res.headersSent) { res.end(); return; }
       if (error instanceof RequestError) json(res, error.status, { error: error.message }, error.status === 413 ? { Connection: 'close' } : {});
+      else if(error instanceof DiagnosticError)json(res,['invalid_request','confirmation_required'].includes(error.code)?400:409,{error:error.message,code:error.code});
       else if (error instanceof AssistantError) json(res, error.status, { error: error.message, code: error.code, ...(error.diagnostics ? { diagnostics: error.diagnostics } : {}) });
       else json(res, 500, { error: 'The operation could not be completed. Check the device or account status and try again.' });
     }

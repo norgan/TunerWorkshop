@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('workshopDesktop',Object.freeze({
   readSettings:()=>ipcRenderer.invoke('workshop:settings-read'),
   saveSettings:settings=>ipcRenderer.invoke('workshop:settings-save',settings),
   onOpenSettings:callback=>subscribe('workshop:open-settings',callback),
+  setServiceActive:active=>ipcRenderer.invoke('workshop:service-active',active),
+  onServiceCloseBlocked:callback=>subscribe('workshop:service-close-blocked',callback),
   onBluetoothDevices:callback=>subscribe('workshop:ble-devices',callback),
   onBluetoothPickerClosed:callback=>subscribe('workshop:ble-picker-closed',callback),
   onBluetoothPairing:callback=>subscribe('workshop:ble-pairing',callback),

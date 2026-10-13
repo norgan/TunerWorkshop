@@ -1,6 +1,6 @@
 {
   "name": "tune-workshop",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "description": "Local offline calibration editor foundation for the Fiat 500X project",

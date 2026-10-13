@@ -8,6 +8,7 @@ import {isChatSubmitKey} from './chat-keyboard.mjs';
 import {validateSettings} from './settings-schema.mjs';
 import {DIAGNOSTIC_PROFILES} from './fiat-8gmk.mjs';
 import {pressureDisplay} from './pressure-units.mjs';
+import {createDiagnosticsWorkspace} from './diagnostics-ui.mjs';
 
 const $=s=>document.querySelector(s);
 let selectedProfileId='generic-obd';
@@ -24,6 +25,8 @@ let serialOperation=false,streamRetryTimer=null;
 let bleSession=null,portList=[],portsLoaded=false,portsLoading=false;
 let preferredPort=getSettings().connection.path;
 const MAX_RECORDED=20000;
+let diagnosticsWorkspace=null;
+let bleServicePending=false;
 
 async function api(path,body,timeout=30000){
   const response=await fetch(path,{method:body===undefined?'GET':'POST',headers:{'X-Tune-Workshop':'1',...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(timeout)});
@@ -43,7 +46,7 @@ function renderParameterChoices(){
   const profile=currentProfile(),selection=selectedKeys(),query=$('#sensor-search').value.trim().toLowerCase();
   const focusedKey=$('#sensor-selection-list').contains(document.activeElement)?document.activeElement.value:null;
   $('#sensor-selected-count').textContent=`${selection.size} of ${profile.channels.length} selected`;
-  $('#profile-description').textContent=profile.id==='generic-obd'?'Standard OBD measurements. Available readings depend on what the ECU reports.':`${profile.channels.length} Fiat IAW 8GMK parameter definitions. Live validation on this ECU is pending.`;
+  $('#profile-description').textContent=profile.id==='generic-obd'?'Standard OBD measurements. Available readings depend on what the ECU reports.':profile.id==='fiat-service'?'Dashboard service counters and reminder reset. Use the direct OBD connection; turn the ignition on with the engine stopped.':`${profile.channels.length} Fiat IAW 8GMK parameter definitions. Faults and service tools are on the Diagnostics page. Live validation on this ECU is pending.`;
   $('#sensor-selection-list').replaceChildren();
   const matches=profile.channels.filter(channel=>`${channel.label} ${channel.unit}`.toLowerCase().includes(query));
   for(const channel of matches){
@@ -104,7 +107,7 @@ function renderSensors(){
   $('#record-count').textContent=`${recorded.length.toLocaleString()} samples${recording?' · Recording':''}`;
   $('#sensor-strip').hidden=selectedProfileId!=='generic-obd'||!getSettings().showSensorStrip||(!active&&!connecting);
   const transport=({wifi:'Wi-Fi',bluetooth:'Bluetooth',ble:'BLE'})[snapshot.transport]||'USB';
-  $('#vehicle-connection').textContent=active?`${transport} ELM · ${selectedProfileId==='fiat-8gmk'?'Fiat parameters':'sensors'} read-only`:connecting?`Connecting to ${transport} ELM…`:'No vehicle connected';
+  $('#vehicle-connection').textContent=active?`${transport} ELM · ${selectedProfileId==='fiat-service'?'Service interval':selectedProfileId==='fiat-8gmk'?'Fiat engine':'Standard OBD'}`:connecting?`Connecting to ${transport} ELM…`:'No vehicle connected';
   let anyStale=false;
   for(const strip of document.querySelectorAll('[data-strip]'))strip.textContent='—';
   for(const sensor of sensors){
@@ -117,6 +120,7 @@ function renderSensors(){
   const mapStrip=$('[data-strip="mapPressure"]');if(mapStrip?.nextSibling?.nodeType===Node.TEXT_NODE)mapStrip.nextSibling.textContent=' '+pressureDisplay('kPa absolute',getSettings().pressureUnit).unit;
   $('#sensor-strip').classList.toggle('stale',anyStale);$('#strip-status').textContent=anyStale?'Some readings are stale':'Read-only OBD';
   if(snapshot.error)error(snapshot.error);
+  diagnosticsWorkspace?.update();
 }
 function applySnapshot(next){
   const was=snapshot.status,previousProfile=snapshot.profileId,previousSession=snapshot.sessionId;let selectionChanged=false;
@@ -244,7 +248,7 @@ async function exportRecording(){
 function makeContext(){
   const sameProfile=(snapshot.profileId||'generic-obd')===selectedProfileId;
   const identity=sameProfile&&snapshot.identity?.source==='live-manufacturer'?Object.fromEntries(['source','ecuIsoCode','hardwareNumber','softwareNumber'].filter(key=>typeof snapshot.identity[key]==='string').map(key=>[key,snapshot.identity[key]])):null;
-  return {tuning:getSelectedTuningContext(),sensors:{source:snapshot.status==='streaming'&&serverOnline?(selectedProfileId==='fiat-8gmk'?'live-manufacturer':'live-obd'):'disconnected',profileId:selectedProfileId,...(sameProfile&&snapshot.ecu?{ecu:snapshot.ecu}:{}),...(identity?{identity}:{}),capturedAt:new Date().toISOString(),values:sensors.filter(s=>Object.hasOwn(snapshot.values||{},s.key)).map(s=>({name:s.name,value:typeof snapshot.values[s.key]==='number'?snapshot.values[s.key]*sensorDisplay(s).factor:snapshot.values[s.key],unit:sensorDisplay(s).unit,capturedAt:snapshot.sampleTimes[s.key],stale:stale(s.key),...(snapshot.quality?.[s.key]?{quality:snapshot.quality[s.key]}:{})}))}};
+  return {tuning:getSelectedTuningContext(),sensors:{source:snapshot.status==='streaming'&&serverOnline?(selectedProfileId!=='generic-obd'?'live-manufacturer':'live-obd'):'disconnected',profileId:selectedProfileId,...(sameProfile&&snapshot.ecu?{ecu:snapshot.ecu}:{}),...(identity?{identity}:{}),capturedAt:new Date().toISOString(),values:sensors.filter(s=>Object.hasOwn(snapshot.values||{},s.key)).map(s=>({name:s.name,value:typeof snapshot.values[s.key]==='number'?snapshot.values[s.key]*sensorDisplay(s).factor:snapshot.values[s.key],unit:sensorDisplay(s).unit,capturedAt:snapshot.sampleTimes[s.key],stale:stale(s.key),...(snapshot.quality?.[s.key]?{quality:snapshot.quality[s.key]}:{})}))}};
 }
 function updateContext(){if($('#assistant-panel').hidden)return;$('#assistant-context-preview').textContent=$('#assistant-include-context').checked?JSON.stringify(makeContext(),null,2):'Context sharing is off. Only this chat will be sent.';}
 function appendMessage(role,text,failed=false){
@@ -402,7 +406,7 @@ for(const button of document.querySelectorAll('[data-sensor-preset]'))button.add
 $('#record-start').addEventListener('click',()=>{
   if(recordingUnsaved&&!confirm('Start a new recording and replace the previous unsaved recording?'))return;
   recorded=[];recordingUnsaved=false;
-  recordingMetadata={source:selectedProfileId==='fiat-8gmk'?'live-manufacturer':'live-obd',profileId:selectedProfileId,profileLabel:currentProfile().label,...(snapshot.sessionId?{sessionId:snapshot.sessionId}:{}),selectedSensors:sensors.map(sensor=>sensor.key),units:Object.fromEntries(sensors.map(sensor=>[sensor.key,sensor.unit])),channels:sensors.map(({key,name,unit,valueType})=>({key,name,unit,valueType}))};
+  recordingMetadata={source:selectedProfileId!=='generic-obd'?'live-manufacturer':'live-obd',profileId:selectedProfileId,profileLabel:currentProfile().label,...(snapshot.sessionId?{sessionId:snapshot.sessionId}:{}),selectedSensors:sensors.map(sensor=>sensor.key),units:Object.fromEntries(sensors.map(sensor=>[sensor.key,sensor.unit])),channels:sensors.map(({key,name,unit,valueType})=>({key,name,unit,valueType}))};
   recording=true;renderSensors();
 });
 $('#record-stop').addEventListener('click',()=>{recording=false;renderSensors();});$('#record-export').addEventListener('click',safely(exportRecording));
@@ -416,7 +420,36 @@ $('#assistant-include-context').addEventListener('change',updateContext);$('#ass
 $('#assistant-clear').addEventListener('click',()=>{if(chatBusy)return;chatMessages=[];$('#assistant-messages').replaceChildren();});
 window.addEventListener('resize',drawLiveChart);window.addEventListener('workspace-changed',drawLiveChart);
 window.addEventListener('pagehide',()=>{void bleSession?.disconnect();streamAbort?.abort();clearTimeout(streamRetryTimer);clearInterval(assistantPoll);});
-window.addEventListener('beforeunload',event=>{if(recordingUnsaved){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(recordingUnsaved||bleServicePending){event.preventDefault();event.returnValue='';}});
+window.workshopDesktop?.onServiceCloseBlocked?.(()=>{
+  showWorkspace('diagnostics');
+  $('#diagnostic-message').textContent='A Bluetooth service action is still running. Choose Stop action or wait for it to finish before closing the app.';
+});
 installBluetoothDialogs();initProfiles();initCards();restoreConnection();updateConnectionType();applyPreferences(getSettings());subscribeSettings(applyPreferences);
+diagnosticsWorkspace=createDiagnosticsWorkspace({
+  getSnapshot:()=>({...snapshot,profileId:selectedProfileId,...(!serverOnline?{status:'unavailable'}:{})}),
+  run:async options=>{
+    const session=bleSession;
+    if(!session)return api('/api/diagnostics/run',options,150000);
+    if(options.action!=='run-service')return session.diagnose(options);
+    if(!window.workshopDesktop?.setServiceActive)throw new Error('Use the Windows app for Bluetooth service actions so it can keep the connection open until the action stops.');
+    bleServicePending=true;
+    try{
+      await window.workshopDesktop.setServiceActive(true);
+      return await session.diagnose(options);
+    }finally{
+      bleServicePending=false;
+      await window.workshopDesktop.setServiceActive(false);
+    }
+  },
+  stop:options=>bleSession?bleSession.stopService(options):api('/api/diagnostics/stop',options),
+  onSetup:profileId=>{
+    if(selectionLocked()&&selectedProfileId!==profileId)throw new Error('Disconnect the current controller on Live sensors, then choose this connection.');
+    if(!selectionLocked()){
+      $('#diagnostic-profile').value=profileId;$('#diagnostic-profile').dispatchEvent(new Event('change'));
+    }
+    showWorkspace('live');$('#adapter-transport').focus();
+  },
+});
 api('/api/status').then(status=>{serverOnline=true;serialAvailable=!!status.serial.available;if(!serialAvailable)$('#serial-note').textContent=status.serial.reason||'USB and Bluetooth Classic support is unavailable. Install this app’s optional serialport dependency.';if(!bleSession)applySnapshot(status.sensors);accountStatus=status.assistant;}).catch(()=>{serverOnline=false;renderSensors();});
 eventStream();setInterval(()=>{renderSensors();updateContext();},1000);

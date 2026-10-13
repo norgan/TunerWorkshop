@@ -1,5 +1,6 @@
 import { SENSOR_DEFINITIONS } from './elm-protocol.mjs';
 import { FIAT_8GMK_ROWS } from './fiat-8gmk-data.mjs';
+import { INSTRUMENT_SERVICE_PROFILE } from './instrument-service.mjs';
 
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const genericDigits = { rpm: 0, coolantTemperature: 0, mapPressure: 0, intakeAirTemperature: 0, throttlePosition: 1, ecuVoltage: 2 };
@@ -24,7 +25,8 @@ export const FIAT_8GMK_DEFINITIONS = freeze(FIAT_8GMK_ROWS.map(([key, label, uni
 export const DIAGNOSTIC_PROFILES = freeze([
   { id: 'generic-obd', label: 'Standard OBD sensors', channels: SENSOR_DEFINITIONS.map(sensor => ({ key: sensor.key, label: sensor.label, unit: sensor.unit, digits: genericDigits[sensor.key], valueType: 'number', staleAfterMs: 5000 })), defaultChannels: SENSOR_DEFINITIONS.map(sensor => sensor.key) },
   { id: 'fiat-8gmk', label: 'Fiat 500X · IAW 8GMK · 105 parameters', channels: FIAT_8GMK_DEFINITIONS.map(({ key, label, unit, digits, valueType, staleAfterMs }) => ({ key, label, unit, digits, valueType, staleAfterMs })),
-    defaultChannels: ['mes-10500', 'mes-10144', 'mes-10510', 'mes-10155', 'mes-10351', 'mes-11517', 'mes-10533', 'mes-10853'] }
+    defaultChannels: ['mes-10500', 'mes-10144', 'mes-10510', 'mes-10155', 'mes-10351', 'mes-11517', 'mes-10533', 'mes-10853'] },
+  INSTRUMENT_SERVICE_PROFILE
 ]);
 
 export function getDiagnosticProfile(id = 'generic-obd') {
