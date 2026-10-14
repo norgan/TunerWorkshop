@@ -1,5 +1,6 @@
 /** Isolated renderer checks. The supplied session is only an SSE event emitter;
  * the connection request is intercepted before it can access any adapter. */
+import {DIAGNOSTIC_PROFILES} from '../fiat-8gmk.mjs';
 export async function runLiveProfileSmoke(contents, session) {
   const check = script => contents.executeJavaScript(`(async()=>{const $=s=>document.querySelector(s),assert=(value,message)=>{if(!value)throw new Error(message);},until=async predicate=>{const end=Date.now()+5000;while(!predicate()&&Date.now()<end)await new Promise(r=>setTimeout(r,20));assert(predicate(),'Live profile UI did not update');};${script}})()`);
   const fixture = { status:'streaming',transport:'wifi',profileId:'fiat-8gmk',sessionId:'synthetic-profile-session',ecu:'18DAF110',selectedSensors:['mes-10500','mes-10155','mes-10246'],supportedSensors:['mes-10500','mes-10155','mes-10246'],values:{},sampleTimes:{},quality:{},channels:[{key:'mes-10500',staleAfterMs:30000},{key:'mes-10155',staleAfterMs:30000},{key:'mes-10246',staleAfterMs:30000}],identity:{source:'live-manufacturer',ecuIsoCode:'00 01 50 A8 15',hardwareNumber:'MM8GMKHW670',softwareNumber:'SYNTHETIC',vin:'SHOULD-NOT-BE-SHARED'},error:null };
@@ -28,7 +29,7 @@ export async function runLiveProfileSmoke(contents, session) {
       assert(document.querySelectorAll('#sensor-selection-list input').length===152,'Expanded Fiat catalog is not selectable');
       assert($('#sensor-cards').children.length===8,'Fiat suggested selection not applied');
       assert($('#profile-description').textContent.includes('pending'),'Manufacturer verification state was hidden');
-      $('#sensor-selection-details').open=true;
+      assert($('#sensor-selection-details').open,'Full parameter chooser is hidden by default');
       $('#sensor-search').value='clutch';$('#sensor-search').dispatchEvent(new Event('input'));
       assert(document.querySelectorAll('#sensor-selection-list input').length>1&&document.querySelectorAll('#sensor-selection-list input').length<152,'Parameter search does not filter');
       $('#sensor-search').value='multiair';$('#sensor-search').dispatchEvent(new Event('input'));
@@ -38,11 +39,12 @@ export async function runLiveProfileSmoke(contents, session) {
       $('#sensor-search').value='';$('#sensor-search').dispatchEvent(new Event('input'));
       $('[data-sensor-preset="clear"]').click();
       assert($('#connect-sensors').disabled,'Empty selection allowed a connection');
-      const first33=[...document.querySelectorAll('#sensor-selection-list input')].slice(0,33).map(input=>input.value);
-      for(const key of first33)document.querySelector('#sensor-selection-list input[value="'+key+'"]').click();
-      assert(document.querySelectorAll('#sensor-selection-list input:checked').length===32,'Selection exceeded 32 parameters');
-      assert(!document.querySelector('#sensor-selection-list input[value="'+first33[32]+'"]').checked,'The 33rd parameter was retained');
-      assert($('#live-error').textContent.includes('at most 32'),'Selection limit did not explain how to continue');
+      $('[data-sensor-preset="all"]').click();
+      assert(document.querySelectorAll('#sensor-selection-list input:checked').length===152,'Enable all did not select the complete engine profile');
+      assert($('#sensor-cards').children.length===152&&$('#sensor-selected-count').textContent==='152 of 152 selected','Full selection count or reading cards are missing');
+      assert($('#live-channel').options.length>32,'Numeric chart chooser still has an arbitrary selection limit');
+      $('[data-sensor-preset="default"]').click();
+      assert(document.querySelectorAll('#sensor-selection-list input:checked').length===8,'Suggested selection did not restore engine defaults after Enable all');
       $('[data-sensor-preset="clear"]').click();
       document.querySelector('#sensor-selection-list input[value="mes-10246"]').click();
       assert($('#live-chart').hidden&&$('#live-channel').options.length===0,'Text-only parameters were offered as numeric graphs');
@@ -56,6 +58,7 @@ export async function runLiveProfileSmoke(contents, session) {
       await until(()=>!$('#record-start').disabled);
       assert(test.requests[0].profileId==='fiat-8gmk'&&test.requests[0].channels.length===4&&test.requests[0].channels.every(key=>test.fixture.selectedSensors.includes(key)),'Connect did not carry exactly the selected profile channels');
       assert([...document.querySelectorAll('#sensor-selection-list input')].every(input=>input.disabled),'Selection changed during a live session');
+      assert($('[data-sensor-preset="all"]').disabled&&$('#sensor-selection-note').textContent.includes('Disconnect'),'Enable all bypassed an active connection lock');
       assert($('#sensor-strip').hidden,'Generic sensor strip represented manufacturer readings');
       assert(!$('#assistant-include-context').checked,'Live connection opted the user into assistant sharing');
       $('#record-start').click();
@@ -101,14 +104,37 @@ export async function runLiveProfileSmoke(contents, session) {
       assert(recorded.samples.length===2&&recorded.samples[0].values['mes-10246']==='Pressed'&&!('rpm' in recorded.samples[0].values),'Recording lost status text or included unselected data');
       assert(recorded.samples[1].quality['mes-10155']==='decode-error'&&recorded.samples[1].values['mes-10155']===null,'Recording discarded an unavailable result');
     `);
-    return {manufacturerCatalogPicker:true,expandedMultiAirSearch:true,additionalSensorRecordingAndContext:true,selectedParameterLimit:true,numericAndTextCards:true,profileSelectionLocked:true,selectedConnectRequest:true,typedManufacturerRecording:true,manufacturerContextProvenance:true,perChannelStaleness:true,liveSourceIsolation:true,recordingProfilePreserved:true};
+    const engine=DIAGNOSTIC_PROFILES.find(profile=>profile.id==='fiat-8gmk');
+    const fullFixture={...fixture,selectedSensors:engine.channels.map(channel=>channel.key),supportedSensors:engine.channels.map(channel=>channel.key),channels:engine.channels.map(channel=>({...channel,staleAfterMs:180000}))};
+    await check(`
+      const test=window.__liveProfileSmoke;test.requests=[];test.fixture=${JSON.stringify(fullFixture)};
+      $('#diagnostic-profile').value='fiat-8gmk';$('#diagnostic-profile').dispatchEvent(new Event('change'));
+      $('[data-sensor-preset="all"]').click();$('#connect-sensors').click();
+      await until(()=>test.requests.length===1&&$('#diagnostic-profile').disabled);
+      assert(test.requests[0].channels.length===152,'Enable all connect request lost parameters');
+      assert($('#sensor-cards').children.length===152,'Full server snapshot reduced the selection');
+    `);
+    const allValues=Object.fromEntries(engine.channels.map(channel=>[channel.key,channel.valueType==='text'?'Synthetic status':0]));
+    sample(allValues,Object.fromEntries(engine.channels.map(channel=>[channel.key,'valid'])),{timestamp:new Date(Date.now()-45000).toISOString()});
+    await check(`
+      await until(()=>$('#sensor-8gmk-1996-6 .sensor-state').textContent==='Live reading');
+      assert($('#sensor-mes-10500 .sensor-state').textContent==='Live reading','Full-cycle readings became stale after the old 30-second cap');
+      $('#live-assistant').click();$('#assistant-include-context').checked=true;$('#assistant-include-context').dispatchEvent(new Event('change'));
+      const context=JSON.parse($('#assistant-context-preview').textContent);
+      assert(context.sensors.valuesTotal===152&&context.sensors.values.length>32,'Assistant snapshot retained the old sensor limit');
+      assert(context.sensors.valuesTruncated===(context.sensors.values.length<152)&&JSON.stringify(context).length<=23500,'Assistant preview failed to disclose or bound full-controller context');
+      $('#assistant-include-context').checked=false;$('#assistant-include-context').dispatchEvent(new Event('change'));$('#assistant-close').click();
+      $('#disconnect-sensors').click();await until(()=>!$('#diagnostic-profile').disabled);
+      $('#diagnostic-profile').value='generic-obd';$('#diagnostic-profile').dispatchEvent(new Event('change'));$('[data-sensor-preset="default"]').click();
+    `);
+    return {manufacturerCatalogPicker:true,expandedMultiAirSearch:true,additionalSensorRecordingAndContext:true,enableAllControllerSensors:true,fullControllerConnectAndContext:true,numericAndTextCards:true,profileSelectionLocked:true,selectedConnectRequest:true,typedManufacturerRecording:true,manufacturerContextProvenance:true,perChannelStaleness:true,liveSourceIsolation:true,recordingProfilePreserved:true};
   } finally {
     await check(`
       const test=window.__liveProfileSmoke;
       if(test){window.fetch=test.fetch;window.confirm=test.confirm;URL.createObjectURL=test.createObjectURL;delete window.__liveProfileSmoke;}
       $('#assistant-include-context').checked=false;$('#assistant-include-context').dispatchEvent(new Event('change'));
       if(!$('#assistant-panel').hidden)$('#assistant-close').click();
-      $('#sensor-selection-details').open=false;
+      $('#sensor-selection-details').open=true;
     `);
     session.emit('status',{...session.snapshot(),status:'disconnected',profileId:'generic-obd'});
   }

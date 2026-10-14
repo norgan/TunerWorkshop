@@ -80,15 +80,15 @@ test('channel metadata validates display, scalar type, text and enum bounds', ()
   }
 });
 
-test('large catalogs allow 512 channels while subscriptions retain a separate 32-channel bound', () => {
+test('a full 512-channel catalog can be subscribed without permitting unknown or repeated IDs', () => {
   const input = fixtureCatalog(); input.profiles.length = 1;
   input.profiles[0].channels = Array.from({ length: 512 }, (_, index) => ({ id: `channel-${index}`, label: `Channel ${index}`, valueType: 'number', staleAfterMs: 30000 }));
   const catalog = validateDiagnosticCatalog(input), session = fixtureSession(catalog);
   assert.equal(catalog.profiles[0].channels.length, DIAGNOSTIC_LIMITS.channels);
   const ids = input.profiles[0].channels.map(channel => channel.id);
-  assert.deepEqual(validateSubscriptions(catalog, session, ids.slice(0, 32)), ids.slice(0, 32));
+  assert.deepEqual(validateSubscriptions(catalog, session, ids), ids);
   assert.deepEqual(validateSubscriptions(catalog, session, []), []);
-  for (const invalid of [ids.slice(0, 33), ['channel-0', 'channel-0'], ['missing'], new Array(1), 'channel-0']) assert.throws(() => validateSubscriptions(catalog, session, invalid), TypeError);
+  for (const invalid of [[...ids,'channel-512'], ['channel-0', 'channel-0'], ['missing'], new Array(1), 'channel-0']) assert.throws(() => validateSubscriptions(catalog, session, invalid), TypeError);
   input.profiles[0].channels.push({ id: 'channel-512', label: 'Extra', valueType: 'number', staleAfterMs: 5000 });
   assert.throws(() => validateDiagnosticCatalog(input), /512/);
   input.profiles[0].channels.pop(); input.profiles.push(fixtureCatalog().profiles[1]);

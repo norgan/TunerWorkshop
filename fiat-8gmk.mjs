@@ -7,6 +7,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 const genericDigits = { rpm: 0, coolantTemperature: 0, mapPressure: 0, intakeAirTemperature: 0, throttlePosition: 1, ecuVoltage: 2 };
 const numericFormat = /^(num|nums)(?:,(\d+))?(?:,(-?\d+(?:\.\d+)?))?(?:,(-?\d+(?:\.\d+)?))?$/;
 const freeze = value => { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
+export const MAX_SELECTED_PARAMETERS = 512;
 
 const originalDefinitions = FIAT_8GMK_ROWS.map(([key, label, unit, request, startByte, bytes, format, statusRules]) => {
   const numeric = numericFormat.exec(format);
@@ -47,9 +48,10 @@ export function getDiagnosticProfile(id = 'generic-obd') {
 export function selectProfileChannels(profileId, input) {
   const profile = getDiagnosticProfile(profileId), ids = input ?? profile.defaultChannels;
   assert(profile.available!==false,profile.unavailableReason||'This controller is not yet available.');
-  assert(Array.isArray(ids) && ids.length >= 1 && ids.length <= 32 && new Set(ids).size === ids.length, 'Select between 1 and 32 distinct parameters.');
-  assert(ids.every(id => profile.channels.some(channel => channel.key === id&&channel.available!==false)), 'A selected parameter is not available in this profile.');
-  return profile.channels.filter(channel => ids.includes(channel.key));
+  assert(Array.isArray(ids) && ids.length >= 1 && ids.length <= MAX_SELECTED_PARAMETERS && new Set(ids).size === ids.length, `Select between 1 and ${MAX_SELECTED_PARAMETERS} distinct parameters from this profile.`);
+  const requested=new Set(ids),selected=profile.channels.filter(channel=>channel.available!==false&&requested.has(channel.key));
+  assert(selected.length===ids.length, 'A selected parameter is not available in this profile.');
+  return selected;
 }
 
 /** Decode an already attributed DID data record, without service/DID header bytes. */

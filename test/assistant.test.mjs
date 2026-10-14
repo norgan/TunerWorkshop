@@ -121,7 +121,13 @@ test('manufacturer context retains selected categorical readings with live ident
   assert.throws(()=>validateAssistantRequest(wrongIdentity));
   const privateField=structuredClone(input);privateField.context.sensors.identity.vin='not part of allowed context';
   assert.throws(()=>validateAssistantRequest(privateField));
-  const tooMany=structuredClone(input);tooMany.context.sensors.values=Array(33).fill(input.context.sensors.values[0]);
+  const expanded=structuredClone(input);expanded.context.sensors.values=Array(152).fill(input.context.sensors.values[0]);
+  assert.equal(validateAssistantRequest(expanded).context.sensors.values.length,152);
+  const truncated=structuredClone(input);Object.assign(truncated.context.sensors,{valuesTotal:152,valuesTruncated:true});
+  assert.equal(validateAssistantRequest(truncated).context.sensors.valuesTruncated,true);
+  truncated.context.sensors.valuesTruncated=false;
+  assert.throws(()=>validateAssistantRequest(truncated),/truncation/);
+  const tooMany=structuredClone(input);tooMany.context.sensors.values=Array(513).fill(input.context.sensors.values[0]);
   assert.throws(()=>validateAssistantRequest(tooMany));
 });
 

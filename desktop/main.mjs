@@ -209,6 +209,19 @@ async function runSmoke(contents,token){
     await window.workshopDesktop.setServiceActive(false);
   })()`);
   checks.bluetoothServiceCloseGuard=true;
+  const {runFiatMapSmoke}=await import('./fiat-map-smoke.mjs');
+  const fiatArg=process.argv.find(value=>value.startsWith('--fiat-reference='));
+  let fiatReference=null;
+  if(fiatArg){
+    const path=resolve(fiatArg.slice('--fiat-reference='.length)),bytes=await readFile(path);
+    if(bytes.length>32*1024*1024)throw new Error('Fiat reference exceeds the file limit.');
+    fiatReference={base64:bytes.toString('base64'),name:path.split(/[\\/]/).at(-1)};
+  }
+  Object.assign(checks,await runFiatMapSmoke(contents,fiatReference));
+  if(fiatReference){
+    await contents.executeJavaScript(`document.querySelector('[data-goal-map="500x-ignition-a"]').click();document.querySelector('[data-view="surface"]').click();document.querySelector('.editor-heading').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    await writeFile(smokeOutput.replace(/\.json$/i,'')+'-500x-tuning.png',(await contents.capturePage()).toPNG());
+  }
   await contents.executeJavaScript('window.scrollTo(0,0);new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
   await writeFile(smokeOutput.replace(/\.json$/i,'')+'-diagnostics.png',(await contents.capturePage()).toPNG());
   if(renderErrors.length)throw new Error('Renderer reported an error: '+renderErrors.join('; '));

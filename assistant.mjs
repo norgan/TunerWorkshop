@@ -157,7 +157,7 @@ export function validateAssistantRequest(input) {
     }
     if (input.context.sensors != null) {
       const source = input.context.sensors;
-      keys(source, ['source', 'capturedAt', 'profileId', 'ecu', 'identity', 'values'], 'Sensor snapshot');
+      keys(source, ['source', 'capturedAt', 'profileId', 'ecu', 'identity', 'values', 'valuesTotal', 'valuesTruncated'], 'Sensor snapshot');
       check(['live-obd', 'live-manufacturer', 'disconnected', 'stale'].includes(source.source), 'Sensor source must identify live, disconnected, or stale data.');
       const sensors = { source: source.source };
       for(const key of ['profileId','ecu'])if(source[key]!=null)optionalText(source,sensors,key,96);
@@ -168,7 +168,12 @@ export function validateAssistantRequest(input) {
         for(const key of ['ecuIsoCode','hardwareNumber','softwareNumber'])optionalText(source.identity,sensors.identity,key,80);
       }
       if (source.capturedAt != null) sensors.capturedAt = text(source.capturedAt, 'Snapshot time', 80);
-      check(Array.isArray(source.values) && source.values.length <= 32, 'Send at most 32 sensor values.');
+      check(Array.isArray(source.values) && source.values.length <= 512, 'Send at most 512 sensor values.');
+      if(source.valuesTotal!==undefined)sensors.valuesTotal=number(source.valuesTotal,'Total sensor values',{integer:true,min:source.values.length,max:512});
+      if(source.valuesTruncated!==undefined){
+        sensors.valuesTruncated=boolean(source.valuesTruncated,'Sensor truncation marker');
+        check(sensors.valuesTotal!==undefined&&sensors.valuesTruncated===(sensors.valuesTotal>source.values.length),'Sensor truncation metadata must describe the supplied values.');
+      }
       sensors.values = source.values.map(sensor => {
         keys(sensor, ['name', 'value', 'unit', 'capturedAt', 'stale', 'quality'], 'Sensor');
         const categorical=source.source==='live-manufacturer'||source.profileId==='fiat-8gmk';

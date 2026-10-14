@@ -6,7 +6,7 @@ import {installBluetoothDialogs} from './bluetooth-ui.mjs';
 import {getSettings,saveSettings,subscribeSettings} from './settings-client.mjs';
 import {isChatSubmitKey} from './chat-keyboard.mjs';
 import {validateSettings} from './settings-schema.mjs';
-import {DIAGNOSTIC_PROFILES} from './fiat-8gmk.mjs';
+import {DIAGNOSTIC_PROFILES,MAX_SELECTED_PARAMETERS} from './fiat-8gmk.mjs';
 import {pressureDisplay} from './pressure-units.mjs';
 import {createDiagnosticsWorkspace} from './diagnostics-ui.mjs';
 
@@ -83,7 +83,7 @@ function renderSensors(){
   const locked=selectionLocked();$('#diagnostic-profile').disabled=locked;
   for(const input of document.querySelectorAll('#sensor-selection-list input'))input.disabled=locked||currentProfile().channels.find(c=>c.key===input.value)?.available===false;
   for(const button of document.querySelectorAll('[data-sensor-preset]'))button.disabled=locked;
-  $('#sensor-selection-note').textContent=locked?'Disconnect before changing the diagnostic profile or selected parameters.':`Choose 1–32 parameters. Only selected parameters will be requested.${sensors.length>12?' More parameters reduce the refresh rate for each reading.':''}`;
+  $('#sensor-selection-note').textContent=locked?'Disconnect before changing the diagnostic profile or selected parameters.':`Choose individual parameters or Enable all for this controller. Requests run in sequence; readings that share a request are collected together.${sensors.length>12?' More parameters reduce the refresh rate for each reading.':''}`;
   $('#usb-port-field').hidden=wifi||ble;$('#usb-baud-field').hidden=wifi||ble;$('#refresh-ports').hidden=wifi||ble;
   $('#wifi-host-field').hidden=!wifi;$('#wifi-port-field').hidden=!wifi;
   $('#ble-profile-field').hidden=!ble;$('#ble-custom').hidden=!ble||$('#ble-profile').value!=='custom';
@@ -98,7 +98,7 @@ function renderSensors(){
   $('#connection-status-detail').textContent=snapshot.status==='error'?(snapshot.error||'The connection stopped before readings were available. Copy the connection details below to help diagnose it.'):'';
   $('#connection-troubleshooting').hidden=snapshot.status!=='error'||!snapshot.error?.includes('ATZ');
   $('#connection-troubleshooting').textContent='The adapter did not answer its reset command, before ECU communication began. Check adapter power and the baud rate, close other OBD apps, and confirm the interface is ELM327-compatible.';
-  $('#connect-sensors').disabled=!serverOnline||busy||currentProfile().available===false||!sensors.length||sensors.length>32||(ble?!navigator.bluetooth?.requestDevice:wifi?!$('#wifi-host').value.trim():!serialAvailable||!$('#serial-port').value||portsLoading);
+  $('#connect-sensors').disabled=!serverOnline||busy||currentProfile().available===false||!sensors.length||sensors.length>MAX_SELECTED_PARAMETERS||(ble?!navigator.bluetooth?.requestDevice:wifi?!$('#wifi-host').value.trim():!serialAvailable||!$('#serial-port').value||portsLoading);
   $('#disconnect-sensors').disabled=!serverOnline||snapshot.status==='disconnected';
   $('#serial-port').disabled=busy||portsLoading;$('#serial-baud').disabled=busy;
   $('#adapter-transport').disabled=busy;$('#wifi-host').disabled=busy;$('#wifi-port').disabled=busy;
@@ -127,7 +127,7 @@ function applySnapshot(next){
   const receivedProfile=DIAGNOSTIC_PROFILES.find(profile=>profile.id===(next.profileId||'generic-obd'));
   if(receivedProfile&&['connecting','streaming'].includes(next.status)){
     if(selectedProfileId!==receivedProfile.id){selectedProfileId=receivedProfile.id;$('#diagnostic-profile').value=selectedProfileId;selectionChanged=true;}
-    if(Array.isArray(next.selectedSensors)&&next.selectedSensors.length>=1&&next.selectedSensors.length<=32){const allowed=receivedProfile.channels.filter(channel=>next.selectedSensors.includes(channel.key)).map(channel=>channel.key);if(allowed.length&&allowed.length===next.selectedSensors.length&&(allowed.length!==selectedKeys().size||allowed.some(key=>!selectedKeys().has(key)))){profileSelections.set(selectedProfileId,new Set(allowed));selectionChanged=true;}}
+    if(Array.isArray(next.selectedSensors)&&next.selectedSensors.length>=1&&next.selectedSensors.length<=MAX_SELECTED_PARAMETERS){const allowed=receivedProfile.channels.filter(channel=>channel.available!==false&&next.selectedSensors.includes(channel.key)).map(channel=>channel.key);if(allowed.length&&allowed.length===next.selectedSensors.length&&(allowed.length!==selectedKeys().size||allowed.some(key=>!selectedKeys().has(key)))){profileSelections.set(selectedProfileId,new Set(allowed));selectionChanged=true;}}
   }
   snapshot=next;
   if(receivedProfile&&receivedProfile.id!==selectedProfileId&&!['connecting','streaming'].includes(next.status))snapshot={...next,values:{},sampleTimes:{},quality:{}};
@@ -198,7 +198,7 @@ async function connect(){
   const transport=$('#adapter-transport').value,path=$('#serial-port').value;
   if(['serial','bluetooth'].includes(transport)&&!path)throw new Error('Choose the adapter’s COM port first.');
   const options=transport==='ble'?{transport,profile:$('#ble-profile').value,service:$('#ble-service').value,write:$('#ble-write').value,notify:$('#ble-notify').value}:transport==='wifi'?{transport,host:$('#wifi-host').value.trim(),port:Number($('#wifi-port').value)}:{transport,path,baudRate:Number($('#serial-baud').value)};
-  if(!sensors.length||sensors.length>32)throw new Error('Select between 1 and 32 parameters.');
+  if(!sensors.length||sensors.length>MAX_SELECTED_PARAMETERS)throw new Error(`Select between 1 and ${MAX_SELECTED_PARAMETERS} parameters from this controller.`);
   options.profileId=selectedProfileId;options.channels=sensors.map(sensor=>sensor.key);
   void rememberConnection();
   serialOperation=true;error('');renderSensors();
@@ -248,7 +248,15 @@ async function exportRecording(){
 function makeContext(){
   const sameProfile=(snapshot.profileId||'generic-obd')===selectedProfileId;
   const identity=sameProfile&&snapshot.identity?.source==='live-manufacturer'?Object.fromEntries(['source','ecuIsoCode','hardwareNumber','softwareNumber'].filter(key=>typeof snapshot.identity[key]==='string').map(key=>[key,snapshot.identity[key]])):null;
-  return {tuning:getSelectedTuningContext(),sensors:{source:snapshot.status==='streaming'&&serverOnline?(selectedProfileId!=='generic-obd'?'live-manufacturer':'live-obd'):'disconnected',profileId:selectedProfileId,...(sameProfile&&snapshot.ecu?{ecu:snapshot.ecu}:{}),...(identity?{identity}:{}),capturedAt:new Date().toISOString(),values:sensors.filter(s=>Object.hasOwn(snapshot.values||{},s.key)).map(s=>({name:s.name,value:typeof snapshot.values[s.key]==='number'?snapshot.values[s.key]*sensorDisplay(s).factor:snapshot.values[s.key],unit:sensorDisplay(s).unit,capturedAt:snapshot.sampleTimes[s.key],stale:stale(s.key),...(snapshot.quality?.[s.key]?{quality:snapshot.quality[s.key]}:{})}))}};
+  const context={tuning:getSelectedTuningContext(),sensors:{source:snapshot.status==='streaming'&&serverOnline?(selectedProfileId!=='generic-obd'?'live-manufacturer':'live-obd'):'disconnected',profileId:selectedProfileId,...(sameProfile&&snapshot.ecu?{ecu:snapshot.ecu}:{}),...(identity?{identity}:{}),capturedAt:new Date().toISOString(),values:sensors.filter(s=>Object.hasOwn(snapshot.values||{},s.key)).map(s=>({name:s.name,value:typeof snapshot.values[s.key]==='number'?snapshot.values[s.key]*sensorDisplay(s).factor:snapshot.values[s.key],unit:sensorDisplay(s).unit,capturedAt:snapshot.sampleTimes[s.key],stale:stale(s.key),...(snapshot.quality?.[s.key]?{quality:snapshot.quality[s.key]}:{})}))}};
+  context.sensors.valuesTotal=context.sensors.values.length;
+  context.sensors.valuesTruncated=false;
+  // Keep the exact sent snapshot visible in the preview. A full controller can
+  // exceed the context budget when table cells are included alongside readings.
+  while(context.sensors.values.length&&(context.sensors.values.length>MAX_SELECTED_PARAMETERS||JSON.stringify(context).length>23500)){
+    context.sensors.values.pop();context.sensors.valuesTruncated=true;
+  }
+  return context;
 }
 function updateContext(){if($('#assistant-panel').hidden)return;$('#assistant-context-preview').textContent=$('#assistant-include-context').checked?JSON.stringify(makeContext(),null,2):'Context sharing is off. Only this chat will be sent.';}
 function appendMessage(role,text,failed=false){
@@ -391,17 +399,18 @@ $('#sensor-search').addEventListener('input',renderParameterChoices);
 $('#sensor-selection-list').addEventListener('change',event=>{
   const input=event.target.closest('input[type="checkbox"]');if(!input)return;
   if(selectionLocked()){input.checked=selectedKeys().has(input.value);return;}
-  if(input.checked&&selectedKeys().size>=32){input.checked=false;error('Select at most 32 parameters. Deselect one before adding another.');return;}
+  if(input.checked&&(selectedKeys().size>=MAX_SELECTED_PARAMETERS||!currentProfile().channels.some(channel=>channel.key===input.value&&channel.available!==false))){input.checked=false;error('Choose available parameters from this controller.');return;}
   if(input.checked)selectedKeys().add(input.value);else selectedKeys().delete(input.value);
   error('');syncSelectedSensors();renderSensors();drawLiveChart();updateContext();
 });
 for(const button of document.querySelectorAll('[data-sensor-preset]'))button.addEventListener('click',()=>{
   if(selectionLocked())return;
   const preset=button.dataset.sensorPreset,profile=currentProfile();let keys=[];
+  if(preset==='all')keys=profile.channels.filter(channel=>channel.available!==false).map(channel=>channel.key);
   if(preset==='default')keys=profile.defaultChannels;
   if(preset==='engine')keys=profile.channels.filter(channel=>/engine speed|coolant|intake air temperature|throttle|battery voltage|control module voltage|spark advance/i.test(channel.label)).slice(0,12).map(channel=>channel.key);
   if(preset==='air')keys=profile.channels.filter(channel=>/boost|air pressure|manifold|air temperature|air flow|throttle|turbo/i.test(channel.label)).slice(0,16).map(channel=>channel.key);
-  profileSelections.set(selectedProfileId,new Set(keys));$('#sensor-search').value='';error('');syncSelectedSensors();renderSensors();drawLiveChart();updateContext();
+  profileSelections.set(selectedProfileId,new Set(keys.filter(key=>profile.channels.some(channel=>channel.key===key&&channel.available!==false))));$('#sensor-search').value='';error('');syncSelectedSensors();renderSensors();drawLiveChart();updateContext();
 });
 $('#record-start').addEventListener('click',()=>{
   if(recordingUnsaved&&!confirm('Start a new recording and replace the previous unsaved recording?'))return;

@@ -7,7 +7,7 @@ import { SENSOR_DEFINITIONS } from './elm-protocol.mjs';
  * with validateDiagnosticSession. Never reuse a session across sources.
  * All returned objects are independent, deeply frozen snapshots.
  */
-export const DIAGNOSTIC_LIMITS = Object.freeze({ profiles: 64, channels: 512, subscriptions: 32, enumValues: 128, textLength: 160 });
+export const DIAGNOSTIC_LIMITS = Object.freeze({ profiles: 64, channels: 512, subscriptions: 512, enumValues: 128, textLength: 160 });
 const CATALOG_FORMAT = 'tuneworkshop-diagnostic-catalog';
 const SOURCE_KINDS = ['live-obd', 'live-manufacturer', 'mes-log'];
 const IDENTITY_FIELDS = ['catalogId', 'catalogVersion', 'profileId', 'moduleId', 'ecuId', 'connectionId', 'sessionId', 'sourceKind'];
@@ -123,7 +123,7 @@ function boundProfile(catalog, session) {
 /** Return existing IDs only; a large catalog never implies polling all channels. */
 export function validateSubscriptions(catalog, session, channelIds) {
   const profile = boundProfile(catalog, session);
-  assert(Array.isArray(channelIds) && channelIds.length <= DIAGNOSTIC_LIMITS.subscriptions, 'Select at most 32 channels.');
+  assert(Array.isArray(channelIds) && channelIds.length <= DIAGNOSTIC_LIMITS.subscriptions, 'Select at most 512 channels from this profile.');
   const seen = new Set();
   const selected = Array.from(channelIds, channelId => {
     id(channelId, 'Subscribed channel ID');

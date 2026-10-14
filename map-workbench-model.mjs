@@ -4,6 +4,16 @@ export const MAP_CATEGORIES = Object.freeze({ boost: 'Boost', ignition: 'Ignitio
 export const MAP_ROLES = Object.freeze({ target: 'Target', limiter: 'Limiter', correction: 'Correction', unknown: 'Role unconfirmed' });
 export const DEFINITION_STATES = Object.freeze({ candidate: 'Candidate', 'user-defined': 'User defined', reference: 'Reference definition' });
 
+/** This ECU's requested-pressure table is a divisor, so edit direction is inverse.
+ * Percentage refers to the absolute request at fixed input before other limits. */
+export function requestedBoostFactorChange(input) {
+  const percent = numeric(input, 'Absolute-pressure request change');
+  if (percent <= -100) throw new Error('Absolute-pressure request change must be greater than -100%.');
+  const change = (1 / (1 + percent / 100) - 1) * 100;
+  if (!Number.isFinite(change)) throw new Error('Requested change cannot be represented.');
+  return change;
+}
+
 function numeric(input, label) {
   if (String(input ?? '').trim() === '' || !Number.isFinite(Number(input))) throw new Error(`${label} must be a number.`);
   return Number(input);

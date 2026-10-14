@@ -2,13 +2,15 @@ import { CalibrationProject, createDemoProject, sha256, TYPES, LIMITS } from './
 import { parseMesLog } from './mes-log.mjs';
 import { parseHexBytes, formatEngineeringNumber } from './formats.mjs';
 import {getSettings,settingsReady,saveSettings,subscribeSettings} from './settings-client.mjs';
-import {pressureDisplay,pressureFromDisplay,pressureEditAmount} from './pressure-units.mjs';
+import {pressureDisplay,pressureFromDisplay} from './pressure-units.mjs';
 import { createPayloadInspector } from './dimsport-ui.mjs';
 import { createMapWorkbench } from './map-workbench.mjs';
 import { createMapReferences } from './map-references.mjs';
-import { MAP_CATEGORIES, MAP_ROLES, DEFINITION_STATES, selectionEditPreview } from './map-workbench-model.mjs';
+import { MAP_CATEGORIES, MAP_ROLES, DEFINITION_STATES, selectionEditPreview, requestedBoostFactorChange } from './map-workbench-model.mjs';
 import { inspectWinolsProject } from './winols-project.mjs';
 import { createMapCatalogue } from './map-catalogue.mjs';
+import { inspectFiatCalibration, attachFiatCalibration } from './fiat-calibration-profile.mjs';
+import { createTuningGoals } from './tuning-goals.mjs';
 
 await settingsReady;
 
@@ -21,6 +23,13 @@ let project = createDemoProject(), mapId = project.maps[0].id, view = getSetting
 let selection = new Set([0]), anchor = 0, hexOffset = 0, dirty = false, revision = 0, busy = false;
 let originalHash = '', toastTimer, selectedLog = null, fileAction = '', hexScope = 'file', exportTarget = null;
 let plotPoints = [];
+let calibrationAssessment = null;
+let fuelDisplay = 'lambda';
+const boostRequestOption=document.createElement('option');boostRequestOption.value='boost-request-percent';boostRequestOption.textContent='Absolute-pressure request %';boostRequestOption.hidden=true;boostRequestOption.disabled=true;$('#edit-operation').append(boostRequestOption);
+const tuningGoals = createTuningGoals({getProject: () => project, getAssessment: () => calibrationAssessment,
+  getFuelDisplay:()=>fuelDisplay,onFuelDisplay:value=>{const map=currentMap(),operation=$('#edit-operation').value,text=$('#edit-value').value,stored=map&&operation!=='percent'&&text.trim()?Number(text)/mapDisplay(map).factor:null;fuelDisplay=value;if(map&&stored!==null&&Number.isFinite(stored))$('#edit-value').value=String(stored*mapDisplay(map).factor);render();},
+  onSelectMap: id => { const map=project.maps.find(map=>map.id===id);if(!map)return; mapId=id; view='table'; selection=new Set([0]); anchor=0; $('#map-search').value=''; $('#map-filter').value='all'; $('#show-original').checked=false; $('#edit-operation').value=id==='500x-boost-request'?'boost-request-percent':map.category==='ignition'?'add':'set';$('#edit-value').value=id==='500x-boost-request'||map.category==='ignition'?'0':String(project.readMap(id)[0]*mapDisplay(map).factor);render(); $('.editor-heading').scrollIntoView({block:'start'}); },
+  onInspect: () => $('#find-candidates').click(), onOpenFile: () => $('#load-binary').click()});
 const payloadInspector = createPayloadInspector({ getProject: () => project, inspectHex: inspectPayloadHex, openCandidate: openRawCandidate, requestExport, download, filename, toast });
 const mapWorkbench = createMapWorkbench({ getProject: () => project, getCurrentMap: currentMap, onSaved: map => { mapId=map.id; view='table'; selection=new Set([0]); anchor=0; $('#map-search').value=''; $('#map-filter').value='all'; markDirty(); render(); }, toast });
 const mapCatalogue = createMapCatalogue({onSelect:()=>{mapId=null;selection=new Set();anchor=0;view='catalogue';render();},onPageChange:renderSidebar});
@@ -48,10 +57,12 @@ async function updateHash() {
   const hash = await sha256(target.original);
   if (project === target) { originalHash = hash; $('#digest').textContent = hash; }
 }
-function installProject(next) {
+function installProject(next, assessment = null) {
+  const addedMaps = attachFiatCalibration(next, assessment);
+  calibrationAssessment = assessment;
   const catalogue = inspectWinolsProject(next.original);
   project = next; mapId = next.maps[0]?.id; selection = new Set(mapId ? [0] : []); anchor = 0;
-  dirty = false; revision++; hexOffset = 0; hexScope = 'file'; $('#map-search').value = ''; $('#map-filter').value='all'; view = mapId ? getSettings().defaultMapView : 'hex';
+  dirty = addedMaps.length > 0; revision++; hexOffset = 0; hexScope = 'file'; $('#map-search').value = ''; $('#map-filter').value='all'; view = mapId ? getSettings().defaultMapView : 'hex';
   mapCatalogue.install(next,catalogue);
   if(catalogue){mapId=null;selection=new Set();view='catalogue';}
   $('#show-original').checked = false; render(); guard(updateHash)();
@@ -69,7 +80,7 @@ function renderSidebar() {
   $('#file-size').textContent = `${project.byteLength.toLocaleString()} bytes · ${mapCatalogue.info ? `${mapCatalogue.count.toLocaleString()} source definitions · ${project.maps.length} editable maps` : `${project.maps.length} maps`}`;
 }
 function render() {
-  renderSidebar(); payloadInspector.render(); const map = currentMap(), original = $('#show-original').checked;
+  renderSidebar(); payloadInspector.render(); tuningGoals.render(); const map = currentMap(), original = $('#show-original').checked;
   if(map&&view!=='hex'){try{project.readMap(map.id);}catch{view='hex';toast('These bytes cannot be decoded by the selected map. Use Hex, Undo or Restore bytes.',true);}}
   const fileInfo=project.fileInfo;
   for(const id of ['add-map','import-defs','export-binary'])$(`#${id}`).disabled=fileInfo.readOnly;
@@ -94,6 +105,8 @@ function render() {
   $('#plot-view').hidden = !map || !['curve','surface'].includes(view);
   $('#hex-view').hidden = view !== 'hex';
   $('#edit-tools').hidden = !map;
+  boostRequestOption.hidden=boostRequestOption.disabled=map?.id!=='500x-boost-request';
+  if(boostRequestOption.disabled&&$('#edit-operation').value==='boost-request-percent')$('#edit-operation').value='percent';
   $('#show-original').disabled = !map || view === 'hex';
   $('#export-csv').disabled = !map;
   $('#analyse-table').disabled = !map && !(view==='catalogue'&&mapCatalogue.current());
@@ -136,10 +149,19 @@ function openRawCandidate(candidate) {
   $('.editor-heading').scrollIntoView({ block: 'nearest' });
   toast('Raw candidate opened. Its purpose, units and scaling remain unverified.');
 }
-const mapDisplay=map=>pressureDisplay(map.unit,getSettings().pressureUnit);
+const mapDisplay=map=>map.category==='fuel'&&map.unit==='lambda'&&fuelDisplay==='afr'&&calibrationAssessment?.stoichiometricAfr?{converted:true,factor:calibrationAssessment.stoichiometricAfr,unit:'AFR'}:pressureDisplay(map.unit,getSettings().pressureUnit);
+function editAdjustment(map,operation,input){
+  if(operation==='boost-request-percent'){
+    if(map.id!=='500x-boost-request')throw new Error('Requested-pressure adjustment is available on its traced correction table only.');
+    if([...selection].some(index=>project.readMap(map.id)[index]<=0))throw new Error('Selected divisor factors must be positive.');
+    return {operation:'percent',amount:requestedBoostFactorChange(input)};
+  }
+  if(!String(input).trim()||!Number.isFinite(Number(input)))throw new Error('Adjustment must be a number.');
+  return {operation,amount:operation==='percent'?Number(input):Number(input)/mapDisplay(map).factor};
+}
 const mapUnit=map=>mapDisplay(map).unit;
 const displayed=(map,values)=>values.map(value=>value*mapDisplay(map).factor);
-const mapNumber=(map,value)=>number(mapDisplay(map).converted?Number(value.toPrecision(7)):value);
+const mapNumber=(map,value)=>number(map.id.startsWith('500x-')?Number(value.toFixed(3)):mapDisplay(map).converted?Number(value.toPrecision(7)):value);
 function displayValues(map) { return displayed(map,$('#show-original').checked ? project.readOriginalMap(map.id) : project.readMap(map.id)); }
 function colour(value, lo, hi) { const t = hi === lo ? .5 : (value - lo) / (hi - lo); return `hsl(${220 - t * 70} 39% ${23 + t * 7}%)`; }
 function renderTable(map) {
@@ -147,7 +169,7 @@ function renderTable(map) {
   const lo = Math.min(...values), hi = Math.max(...values), firstSelected = Math.min(...selection);
   const columns = map.xAxis || Array.from({length:map.cols}, (_,i) => i);
   const rows = map.yAxis || Array.from({length:map.rows}, (_,i) => i);
-  let html = `<table class="map-table" aria-label="${esc(map.name)}"><caption>${esc(map.yLabel)} ↓ &nbsp; / &nbsp; ${esc(map.xLabel)} → &nbsp; · &nbsp; ${esc(mapUnit(map) || 'raw units')}</caption><thead><tr><th scope="col">${esc(mapUnit(map) || 'Index')}</th>${columns.map(v=>`<th scope="col">${esc(number(v))}</th>`).join('')}</tr></thead><tbody>`;
+  let html = `<table class="map-table" aria-label="${esc(map.name)}"><caption>${esc(map.yLabel)} ↓ &nbsp; / &nbsp; ${esc(map.xLabel)} → &nbsp; · &nbsp; ${esc(mapUnit(map) || 'raw units')}</caption><thead><tr><th scope="col">${esc(mapUnit(map) || 'Index')}</th>${columns.map(v=>`<th scope="col" title="${esc(number(v))}">${esc(map.id.startsWith('500x-')?number(Number(v.toFixed(2))):number(v))}</th>`).join('')}</tr></thead><tbody>`;
   for (let r=0;r<map.rows;r++) {
     html += `<tr><th class="row-heading" scope="row">${esc(number(rows[r]))}</th>`;
     for (let c=0;c<map.cols;c++) {
@@ -184,7 +206,7 @@ function editCell(index, initial) {
   const finish=(commit)=>{
     if(done)return; done=true;
     if(commit && input.value !== initialText) {
-      try { if(!input.value.trim())throw new Error('Enter a numeric value.'); const value=pressureFromDisplay(Number(input.value),map.unit,getSettings().pressureUnit); if(project.editCells(map.id,[{index,value}],`Edit ${map.name}`))markDirty(); }
+      try { if(!input.value.trim())throw new Error('Enter a numeric value.'); const value=Number(input.value)/mapDisplay(map).factor; if(project.editCells(map.id,[{index,value}],`Edit ${map.name}`))markDirty(); }
       catch(e){toast(e.message,true);}
     }
     render(); $(`[data-cell="${index}"]`)?.focus({preventScroll:true});
@@ -226,9 +248,10 @@ function renderEditPreview() {
   if(!selection.size){output.textContent='Select cells in the table or graph to preview an adjustment.';return;}
   try {
     const op=$('#edit-operation').value;
-    const result=selectionEditPreview(project,map,selection,op,pressureEditAmount($('#edit-value').value,op,map.unit,getSettings().pressureUnit));
+    const adjustment=editAdjustment(map,op,$('#edit-value').value);
+    const result=selectionEditPreview(project,map,selection,adjustment.operation,adjustment.amount);
     const range=values=>{const low=Math.min(...values),high=Math.max(...values);return low===high?number(low):`${number(low)}–${number(high)}`;};
-    output.textContent=`Preview · ${result.count} cell${result.count===1?'':'s'} · ${range(displayed(map,result.before))} → ${range(displayed(map,result.after))} ${mapUnit(map)||'raw units'} · ${result.changedBytes} byte${result.changedBytes===1?'':'s'} would change. Nothing applied yet.`;
+    output.textContent=`Preview · ${result.count} cell${result.count===1?'':'s'} · ${range(displayed(map,result.before))} → ${range(displayed(map,result.after))} ${mapUnit(map)||'raw units'} · ${result.changedBytes} byte${result.changedBytes===1?'':'s'} would change. Nothing applied yet.${op==='boost-request-percent'?' Changes the absolute-pressure request at fixed input before other limits; this is not a gauge-boost percentage.':''}`;
     output.classList.remove('invalid');$('#apply-edit').disabled=false;
   } catch(error){output.textContent=error.message;output.classList.add('invalid');$('#apply-edit').disabled=true;}
 }
@@ -304,8 +327,8 @@ async function handleFile(file){
   busy=true; const target=project,at=revision;
   const checkUnchanged=()=>{if(project!==target||revision!==at)throw new Error('The workspace changed while reading the file. Import cancelled; your current work was preserved.');};
   try{
-    if(action==='binary'){const next=new CalibrationProject(new Uint8Array(await file.arrayBuffer()),{name:file.name});checkUnchanged();installProject(next);}
-    if(action==='project'){const next=/\.ols$/i.test(file.name)?new CalibrationProject(new Uint8Array(await file.arrayBuffer()),{name:file.name}):await CalibrationProject.fromJSON(await file.text());checkUnchanged();installProject(next);}
+    if(action==='binary'){const next=new CalibrationProject(new Uint8Array(await file.arrayBuffer()),{name:file.name});const assessment=await inspectFiatCalibration(next);checkUnchanged();installProject(next,assessment);}
+    if(action==='project'){const next=/\.ols$/i.test(file.name)?new CalibrationProject(new Uint8Array(await file.arrayBuffer()),{name:file.name}):await CalibrationProject.fromJSON(await file.text());const assessment=await inspectFiatCalibration(next);checkUnchanged();installProject(next,assessment);}
     if(action==='definitions'){
       const content=JSON.parse(await file.text()),defs=Array.isArray(content)?content:content.maps;
       if(!Array.isArray(defs)||!defs.length)throw new Error('Definition JSON must be an array of map definitions, or an object with maps.');
@@ -369,12 +392,12 @@ $('#table-view').addEventListener('paste',guard(e=>{
   if(!lines.length||lines.some(row=>row.length!==width))throw new Error('Paste a rectangular numeric table with tabs or commas.');
   const start=Math.min(...selection),row0=Math.floor(start/map.cols),col0=start%map.cols;
   if(!Number.isFinite(start)||row0+lines.length>map.rows||col0+width>map.cols)throw new Error('Pasted cells do not fit this map.');
-  const cells=[];lines.forEach((row,r)=>row.forEach((value,c)=>{if(!value.trim())throw new Error('Pasted table contains a blank value.');cells.push({index:(row0+r)*map.cols+col0+c,value:pressureFromDisplay(Number(value),map.unit,getSettings().pressureUnit)});}));
+  const cells=[];lines.forEach((row,r)=>row.forEach((value,c)=>{if(!value.trim())throw new Error('Pasted table contains a blank value.');cells.push({index:(row0+r)*map.cols+col0+c,value:Number(value)/mapDisplay(map).factor});}));
   if(project.editCells(map.id,cells,`Paste ${cells.length} cells`))markDirty();selection=new Set(cells.map(c=>c.index));render();toast('Table values pasted.');
 }));
 $('#apply-edit').addEventListener('click',guard(()=>{
   const map=currentMap();if(!map||!selection.size||$('#show-original').checked)return;
-  const text=$('#edit-value').value;if(!text.trim())throw new Error('Enter an edit value.');const op=$('#edit-operation').value,n=pressureEditAmount(text,op,map.unit,getSettings().pressureUnit),values=project.readMap(map.id);
+  const text=$('#edit-value').value;if(!text.trim())throw new Error('Enter an edit value.');const adjustment=editAdjustment(map,$('#edit-operation').value,text),op=adjustment.operation,n=adjustment.amount,values=project.readMap(map.id);
   const edits=[...selection].map(index=>({index,value:op==='set'?n:op==='add'?values[index]+n:values[index]*(1+n/100)}));
   if(project.editCells(map.id,edits,`${op} ${n} on ${edits.length} cells`))markDirty();render();toast('Edit applied. Stored values reflect the map’s encoding precision.');
 }));
@@ -412,7 +435,7 @@ $('#save-project').addEventListener('click',guard(async()=>{
   const target=project,at=revision,saveName=filename('.tuneworkshop.json',target);$('#save-project').disabled=true;
   try{const data=await target.serialize(),saved=await download(saveName,JSON.stringify(data));if(saved&&project===target&&revision===at)dirty=false;render();toast(saved?(window.workshopDesktop?'Project saved.':'Project download prepared. Keep the downloaded file to reopen your work.'):'Save cancelled or incomplete. Your work is still unsaved.');}finally{$('#save-project').disabled=false;}
 }));
-$('#export-csv').addEventListener('click',guard(()=>{const m=currentMap();if(!m)return;const v=displayValues(m),rows=[];for(let r=0;r<m.rows;r++)rows.push(v.slice(r*m.cols,(r+1)*m.cols).map(String).join(','));download(`${m.id}${$('#show-original').checked?'-original':''}${mapDisplay(m).converted?'-'+getSettings().pressureUnit:''}.csv`,rows.join('\r\n'),'text/csv');toast(`CSV exported in ${mapUnit(m)||'raw units'}, one map row per line.`);}));
+$('#export-csv').addEventListener('click',guard(()=>{const m=currentMap();if(!m)return;const v=displayValues(m),rows=[];for(let r=0;r<m.rows;r++)rows.push(v.slice(r*m.cols,(r+1)*m.cols).map(String).join(','));download(`${m.id}${$('#show-original').checked?'-original':''}${mapDisplay(m).converted?'-'+mapUnit(m).replace(/[^a-zA-Z0-9]/g,'-'):''}.csv`,rows.join('\r\n'),'text/csv');toast(`CSV exported in ${mapUnit(m)||'raw units'}, one map row per line.`);}));
 $('#export-patch').addEventListener('click',guard(async()=>{
   const target=project,reportName=filename('.changes.json',target),maps=target.maps,changes=target.diff();const report={format:'tuneworkshop-change-report',version:1,project:target.name,synthetic:target.synthetic,ecuChecksum:'not-implemented',definitionValidation:'unverified',originalSha256:await sha256(target.original),maps,changes};
   download(reportName,JSON.stringify(report,null,2));

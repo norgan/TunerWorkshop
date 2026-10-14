@@ -300,8 +300,19 @@ test('tester-present terminal refusal followed by an acknowledgement stops the s
   assert.equal(f.port.closed, true);
 });
 
-test('large channel selections retain a bounded stale threshold', async t => {
+test('all 152 engine readings poll sequentially once per shared DID with freshness covering the full cycle', async t => {
   const f = fixture(t, { timeout: 4000 });
-  const state = await f.connect(FIAT_8GMK_DEFINITIONS.slice(0, 32).map(d => d.key));
-  assert.ok(state.channels.every(channel => channel.staleAfterMs >= 15000 && channel.staleAfterMs <= 30000));
+  const keys=FIAT_8GMK_DEFINITIONS.map(d=>d.key),requests=[...new Set(FIAT_8GMK_DEFINITIONS.map(d=>d.request))];
+  const firstCycle=events(f.session,'sample',requests.length,20000);
+  const state = await f.connect(keys);
+  assert.equal(state.channels.length,152);
+  assert.ok(state.channels.every(channel=>channel.staleAfterMs>=requests.length*600*2&&channel.staleAfterMs>30000));
+  const samples=await firstCycle;await f.session.disconnect();
+  assert.equal(samples.length,requests.length);
+  for(const request of requests)assert.equal(f.port.writes.filter(command=>command===request).length,1,request);
+  const values=Object.assign({},...samples.map(sample=>sample.values));
+  assert.equal(Object.keys(values).length,152);
+  assert.ok(keys.every(key=>Object.hasOwn(values,key)));
+  assert.ok(samples.every(sample=>sample.sessionId===state.sessionId&&sample.profileId==='fiat-8gmk'&&Object.values(sample.quality).every(quality=>quality==='valid')));
+  assert.ok(f.port.writes.includes('3E00'),'Keepalive must still run during a full sensor cycle');
 });

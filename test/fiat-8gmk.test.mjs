@@ -107,7 +107,15 @@ test('all channels decode bounded zero/max records without undefined or nonfinit
 test('selection is profile-scoped, bounded and independent from request strings', () => {
   assert.equal(selectProfileChannels('fiat-8gmk').length, 8);
   assert.equal(selectProfileChannels('generic-obd').length, 6);
-  for (const ids of [[], ['mes-10500', 'mes-10500'], ['rpm'], ['221000'], FIAT_8GMK_DEFINITIONS.slice(0, 33).map(d => d.key)]) assert.throws(() => selectProfileChannels('fiat-8gmk', ids));
+  const all=FIAT_8GMK_DEFINITIONS.map(d=>d.key);
+  assert.equal(selectProfileChannels('fiat-8gmk',all).length,152);
+  assert.equal(selectProfileChannels('fiat-8gmk',all.slice(0,33)).length,33);
+  for (const ids of [[], ['mes-10500', 'mes-10500'], ['rpm'], ['221000'], new Array(1), [undefined], [null], Array(513).fill(all[0])]) assert.throws(() => selectProfileChannels('fiat-8gmk', ids));
+  for(const profile of DIAGNOSTIC_PROFILES.filter(profile=>profile.available!==false)){
+    const available=profile.channels.filter(channel=>channel.available!==false).map(channel=>channel.key);
+    if(available.length)assert.equal(selectProfileChannels(profile.id,available).length,available.length);
+    for(const unavailable of profile.channels.filter(channel=>channel.available===false))assert.throws(()=>selectProfileChannels(profile.id,[unavailable.key]));
+  }
   assert.throws(() => selectProfileChannels('guessed-module'));
 });
 

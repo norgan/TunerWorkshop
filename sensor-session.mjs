@@ -263,15 +263,21 @@ export class BaseSensorSession extends Emitter {
     this.#state.identity={source:'live-manufacturer',ecuIsoCode:'00 01 50 A8 15',hardwareNumber,softwareNumber};
     }
     this.#state.supportedSensors=selected.map(d=>d.key);
-    this.#state.channels=selected.map(d=>({...d,staleAfterMs:Math.max(15000,Math.min(30000,selected.length*(this.#interval+500)*2))}));
-    this.#lastKeepalive=Date.now();this.#status('streaming');
     const definitions=moduleProfile?.channels??(instrument?INSTRUMENT_SERVICE_PROFILE.channels:FIAT_8GMK_DEFINITIONS);
-    void this.#pollFiat(generation,selected.map(channel=>definitions.find(d=>d.key===channel.key)));
+    const sensors=selected.map(channel=>definitions.find(d=>d.key===channel.key));
+    // Freshness must cover a full grouped polling cycle, including slow replies.
+    // The observed cycle below increases this estimate when the adapter is slower.
+    const cycleMs=new Set(sensors.map(sensor=>sensor.request)).size*(this.#interval+500);
+    this.#state.channels=selected.map(d=>({...d,staleAfterMs:Math.max(15000,cycleMs*2)}));
+    this.#lastKeepalive=Date.now();this.#status('streaming');
+    void this.#pollFiat(generation,sensors);
   }
   async #pollFiat(generation,sensors){
     const groups=new Map();for(const sensor of sensors){if(!groups.has(sensor.request))groups.set(sensor.request,[]);groups.get(sensor.request).push(sensor);}
     try{
-      while(generation===this.#generation)for(const [request,group]of groups){
+      while(generation===this.#generation){
+      const cycleStartedAt=Date.now();
+      for(const [request,group]of groups){
         this.#check(generation);
         await new Promise(resolve=>{this.#resumePoll=resolve;this.#pollTimer=setTimeout(resolve,this.#interval);});
         this.#check(generation);this.#pollTimer=null;this.#resumePoll=null;
@@ -295,6 +301,13 @@ export class BaseSensorSession extends Emitter {
         Object.assign(this.#state.values,values);Object.assign(this.#state.quality,quality);this.#state.lastSampleAt=timestamp;
         this.emit('sample',{timestamp,values,quality,parameterErrors,ecu:this.#state.ecu,profileId:this.#state.profileId,sessionId:this.#state.sessionId});
         });
+      }
+      this.#check(generation);
+      const staleAfterMs=Math.max(15000,Math.ceil((Date.now()-cycleStartedAt)*2));
+      if(this.#state.channels.some(channel=>channel.staleAfterMs<staleAfterMs)){
+        this.#state.channels=this.#state.channels.map(channel=>({...channel,staleAfterMs:Math.max(channel.staleAfterMs,staleAfterMs)}));
+        this.emit('status',this.snapshot());
+      }
       }
     }catch(error){if(generation===this.#generation)this.#fail(error);}
   }

@@ -1,6 +1,6 @@
 # Fiat 500X diagnostic coverage
 
-This document tracks progress towards MultiECUScan-style diagnostics for the **Fiat 500X (334), 1.4 MultiAir, Marelli IAW 8GMK**. It describes Tuner Workshop **0.11.1**, reviewed on **13 October 2026**. Source implementation, packaged-release checks and physical vehicle acceptance are separate milestones.
+This document tracks progress towards MultiECUScan-style diagnostics for the **Fiat 500X (334), 1.4 MultiAir, Marelli IAW 8GMK**. It describes Tuner Workshop **0.12.0**, reviewed on **14 October 2026**. Source implementation, packaged-release checks and physical vehicle acceptance are separate milestones.
 
 Version 0.11.0 adds **23 usable controller/variant profiles**, **581 readable parameter definitions** and **82 actuator workflows** beyond the existing engine and service-reminder profiles. The selector includes all 26 reference controller/variant entries plus Standard OBD. These include alternative engines and optional equipment, not 26 modules confirmed fitted to one car. The app does not yet replace every MultiECUScan function.
 
@@ -11,7 +11,7 @@ Version 0.11.0 adds **23 usable controller/variant profiles**, **581 readable pa
 | Capability | Implemented in the app | Evidence and remaining checks |
 | --- | --- | --- |
 | Standard OBD sensors | Six measurements, supported-PID discovery, charts and recording | USB readings have been observed on a vehicle. That does not verify every adapter or manufacturer function. |
-| IAW 8GMK engine parameters | 152 definitions, numeric/status decoding, search, presets and 1–32 selected readings | The entire catalogue was checked against static reference definitions; the first 26 names were also compared with Simulation. Physical manufacturer-session acceptance remains pending. |
+| IAW 8GMK engine parameters | 152 definitions, numeric/status decoding, search, presets and Enable all or individual readings | The entire catalogue was checked against static reference definitions; the first 26 names were also compared with Simulation. Physical manufacturer-session acceptance remains pending. |
 | Engine identification | Reads identity before manufacturer polling and rejects an unexpected profile | This is part of the engine connection, not a vehicle-wide module scan. |
 | Connection options | USB, Bluetooth Classic COM, BLE and private-network Wi-Fi TCP | Automated transport checks exist. BLE service discovery and a listed COM port do not establish device compatibility. |
 | Saved diagnostic sessions | Imports supported English MES logs and displays recorded faults and parameter samples | Historical information remains separate from current vehicle status. |
@@ -59,7 +59,7 @@ The reference inventory contains **26 module/variant entries** for the 1.4 selec
 
 The local module linkage distinguishes the A5 body-network transport from the direct/A6 transport. The app configures BHCAN29 at 125 kbit/s and CCAN29 at 500 kbit/s, with the recovered session fallback rules. Protocol B uses temporary `ATPB0104` parameters rather than changing stored adapter defaults. The [ELM327 datasheet, pages 24 and 76](https://www.elmelectronics.com/wp-content/uploads/2020/05/ELM327DSL.pdf) defines this runtime configuration. The [official A5 diagram](https://www.multiecuscan.net/images/OBDAdapter5.png) and [official A6 diagram](https://www.multiecuscan.net/images/OBDAdapter6.png) describe the physical adapters; software cannot reroute a physical lead.
 
-Use **Diagnostics → What do you want to work on?** to browse a controller's sensor count and actuator catalogue, then **Set up connection** to select its readings and adapter. Browsing another controller never changes an active connection. Disconnect before changing controller or adapter lead. On **Live sensors**, search its complete list and select up to 32 readings at a time. The limit controls polling load, not catalogue availability.
+Use **Diagnostics → What do you want to work on?** to browse a controller's sensor count and actuator catalogue, then **Set up connection** to select its readings and adapter. Browsing another controller never changes an active connection. Disconnect before changing controller or adapter lead. On **Live sensors**, search its complete list and enable all available readings or choose individual readings. Requests remain sequential; enabling more readings lengthens each polling cycle.
 
 Additional actuator workflows use the recovered fixed requests, pulse durations and return-control commands. They include fresh controller identity checks, raw-zero motion checks where the controller supplies those readings, and explicit user confirmations where it does not. Every result records whether its conditions were measured or user-confirmed. Stop attempts each potentially active output's established release, including both outputs of paired lamps. An unconfirmed release is reported and ends the connection. Writes are never automatically replayed.
 

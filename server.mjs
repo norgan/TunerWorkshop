@@ -10,6 +10,9 @@ const root = dirname(fileURLToPath(import.meta.url));
 export const MAX_JSON_BYTES = 256 * 1024;
 export const MAX_EVENT_SUBSCRIBERS = 8;
 const files = new Map([
+  ['/fiat-calibration-profile.mjs', ['fiat-calibration-profile.mjs', 'text/javascript']],
+  ['/tuning-goals.mjs', ['tuning-goals.mjs', 'text/javascript']],
+  ['/tuning-goals.css', ['tuning-goals.css', 'text/css']],
   ...['fiat-modules','fiat-module-data','module-transport','module-session-actions','module-service','module-service-data','module-diagnostics','module-diagnostics-data','diagnostics-ui','diagnostic-actions','obd-diagnostics','fiat-diagnostics','fiat-diagnostics-data','service-tools','service-tools-data','instrument-service'].map(name=>['/'+name+'.mjs',[name+'.mjs','text/javascript']]),
   ['/diagnostics.css', ['diagnostics.css', 'text/css']],
   ['/winols-project.mjs', ['winols-project.mjs', 'text/javascript']],
